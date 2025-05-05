@@ -80,10 +80,6 @@ nemo-data
 nemo-fileroller
 nemo-font-manager
 nemo-gtkhash
-network-manager-gnome
-network-manager-openvpn
-network-manager-ssh
-network-manager-vpnc
 numix-gtk-theme
 numix-icon-theme
 numix-icon-theme-circle
@@ -92,9 +88,9 @@ p7zip-full
 pamix
 pasystray
 pavucontrol
-pavumeter
-policykit-1
+pkexec
 policykit-desktop-privileges
+polkitd
 printer-driver-all
 profile-sync-daemon
 pulseaudio-module-bluetooth

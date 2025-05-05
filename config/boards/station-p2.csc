@@ -1,22 +1,17 @@
 # Rockchip RK3568 quad core 2GB-4GB GBE eMMC NVMe SATA USB3 WiFi
 BOARD_NAME="Station P2"
-BOARDFAMILY="media"
-BOARD_MAINTAINER="150balbes"
-BOOTCONFIG="firefly-p2-rk3568_defconfig"
+BOARDFAMILY="rockchip64"
+BOOT_SOC="rk3568"
+BOOTCONFIG="roc-pc-rk3568_defconfig"
+BOARD_MAINTAINER=""
 KERNEL_TARGET="current,edge"
+KERNEL_TEST_TARGET="current"
 FULL_DESKTOP="yes"
 BOOT_LOGO="desktop"
-BOOT_FDT_FILE="rockchip/rk3568-firefly-roc-pc.dtb"
-SRC_EXTLINUX="yes"
-SRC_CMDLINE="console=ttyS02,1500000 console=tty0"
+BOOT_FDT_FILE="rockchip/rk3568-roc-pc.dtb"
 ASOUND_STATE="asound.state.station-p2"
 IMAGE_PARTITION_TABLE="gpt"
 
-function post_family_tweaks__station_p2() {
-    display_alert "$BOARD" "Installing board tweaks" "info"
-
-	cp -R $SRC/packages/blobs/rtl8723bt_fw/* $SDCARD/lib/firmware/rtl_bt/
-	cp -R $SRC/packages/blobs/station/firmware/* $SDCARD/lib/firmware/
-
-	return 0
-}
+BOOT_SCENARIO="binman"
+BOOTBRANCH_BOARD="tag:v2025.04"
+BOOTPATCHDIR="v2025.04"

@@ -28,8 +28,6 @@ fonts-dejavu-core
 fonts-freefont-ttf
 fonts-guru
 fonts-guru-extra
-fonts-kacst
-fonts-kacst-one
 fonts-khmeros-core
 fonts-liberation
 fonts-nanum
@@ -53,7 +51,6 @@ hplip
 indicator-printers
 inputattach
 inxi
-kerneloops
 keyutils
 language-pack-de
 language-pack-en
@@ -76,7 +73,6 @@ libgnome-bluetooth13
 libgsettings-qt1
 libnotify-bin
 libproxy1-plugin-gsettings
-libproxy1-plugin-networkmanager
 libu2f-udev
 libwmf0.2-7-gtk
 libxapp1
@@ -86,8 +82,6 @@ lightdm-gtk-greeter
 lightdm-gtk-greeter-settings
 lightdm-settings
 mousetweaks
-network-manager-openvpn-gnome
-network-manager-vpnc
 nitrogen
 numix-gtk-theme
 openprinting-ppds

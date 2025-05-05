@@ -64,8 +64,6 @@ fonts-dejavu-core
 fonts-freefont-ttf
 fonts-guru
 fonts-guru-extra
-fonts-kacst
-fonts-kacst-one
 fonts-khmeros-core
 fonts-liberation
 fonts-nanum
@@ -97,7 +95,6 @@ gvfs-backends
 hplip
 indicator-printers
 inputattach
-kerneloops
 keyutils
 language-pack-gnome-de
 language-pack-gnome-en
@@ -121,8 +118,6 @@ libgsettings-qt1
 libgtk2.0-bin
 libnotify-bin
 libproxy1-plugin-gsettings
-libproxy1-plugin-networkmanager
-libu2f-udev
 libwmf0.2-7-gtk
 libxcursor1
 lightdm
@@ -131,10 +126,6 @@ lxtask
 mesa-utils
 mousepad
 mousetweaks
-network-manager-config-connectivity-ubuntu
-network-manager-openvpn
-network-manager-ssh
-network-manager-vpnc
 numix-blue-gtk-theme
 numix-gtk-theme
 numix-icon-theme
@@ -145,9 +136,9 @@ pamix
 pasystray
 pavucontrol
 pavucontrol-qt
-pavumeter
-policykit-1
+pkexec
 policykit-desktop-privileges
+polkitd
 printer-driver-all
 profile-sync-daemon
 pulseaudio-module-bluetooth

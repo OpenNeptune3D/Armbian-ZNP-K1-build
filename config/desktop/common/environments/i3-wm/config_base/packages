@@ -31,8 +31,6 @@ fonts-dejavu-core
 fonts-freefont-ttf
 fonts-guru
 fonts-guru-extra
-fonts-kacst
-fonts-kacst-one
 fonts-khmeros-core
 fonts-liberation
 fonts-nanum
@@ -45,13 +43,11 @@ foomatic-db-compressed-ppds
 gdebi
 ghostscript-x
 gir1.2-appindicator3-0.1
-gnome-bluetooth
 gnome-disk-utility
 gnome-font-viewer
 gnome-orca
 gnome-power-manager
 gnome-system-monitor
-gnome-system-tools
 gromit
 gstreamer1.0-packagekit
 gstreamer1.0-plugins-base-apps
@@ -65,7 +61,6 @@ i3-wm
 suckless-tools
 indicator-printers
 inputattach
-kerneloops
 keyutils
 language-pack-en
 laptop-detect
@@ -79,13 +74,10 @@ libfontembed1
 libfontenc1
 libgail-common
 libgl1-mesa-dri
-libgnome-bluetooth13
 libgsettings-qt1
 libjson-xs-perl
 libnotify-bin
 libproxy1-plugin-gsettings
-libproxy1-plugin-networkmanager
-libu2f-udev
 libwmf0.2-7-gtk
 libxcb-cursor0
 libxcursor1
@@ -95,8 +87,6 @@ lightdm-gtk-greeter-settings
 lightdm-settings
 lxappearance
 mousetweaks
-network-manager-openvpn-gnome
-network-manager-vpnc
 nitrogen
 numix-gtk-theme
 openprinting-ppds
@@ -107,10 +97,10 @@ pamix
 pasystray
 pavucontrol
 pavucontrol-qt
-pavumeter
-policykit-1
+pkexec
 policykit-1-gnome
 policykit-desktop-privileges
+polkitd
 printer-driver-all
 profile-sync-daemon
 pulseaudio-module-bluetooth

@@ -25,7 +25,6 @@ budgie-kangaroo-applet
 budgie-keyboard-autoswitch-applet
 budgie-network-manager-applet
 budgie-previews
-budgie-previews-applet
 budgie-quickchar
 budgie-quicknote-applet
 budgie-recentlyused-applet
@@ -84,7 +83,6 @@ gvfs-backends
 hplip
 indicator-printers
 inputattach
-kerneloops
 keyutils
 language-pack-gnome-de
 language-pack-gnome-en
@@ -110,8 +108,6 @@ libnotify-bin
 libplank1
 libplank-common
 libproxy1-plugin-gsettings
-libproxy1-plugin-networkmanager
-libu2f-udev
 libwmf0.2-7-gtk
 libxcursor1
 gdm3
@@ -123,10 +119,6 @@ nemo-data
 nemo-fileroller
 nemo-font-manager
 nemo-gtkhash
-network-manager-config-connectivity-ubuntu
-network-manager-openvpn
-network-manager-ssh
-network-manager-vpnc
 numix-blue-gtk-theme
 numix-gtk-theme
 numix-icon-theme
@@ -137,11 +129,11 @@ pamix
 pasystray
 pavucontrol
 pavucontrol-qt
-pavumeter
+pkexec
 plank
-policykit-1
 policykit-1-gnome
 policykit-desktop-privileges
+polkitd
 printer-driver-all
 profile-sync-daemon
 pulseaudio-module-bluetooth

@@ -31,12 +31,6 @@ function determine_artifacts_to_build_for_image() {
 		artifacts_to_build+=("fake_ubuntu_advantage_tools")
 	fi
 
-	if [[ "${PACKAGE_LIST_RM}" != *armbian-config* ]]; then
-		if [[ $BUILD_MINIMAL != yes ]]; then
-			artifacts_to_build+=("armbian-config")
-		fi
-	fi
-
 	if [[ "${PACKAGE_LIST_RM}" != *armbian-zsh* ]]; then
 		if [[ $BUILD_MINIMAL != yes ]]; then
 			artifacts_to_build+=("armbian-zsh")

@@ -33,6 +33,7 @@ function kernel_config() {
 	LOG_SECTION="kernel_config_initialize" do_with_logging do_with_hooks kernel_config_initialize
 
 	if [[ "${KERNEL_CONFIGURE}" == "yes" ]]; then
+		# Start interactive config menu unless running rewrite-kernel-config
 		if [[ "${ARMBIAN_COMMAND}" != "rewrite-kernel-config" ]]; then
 			# This piece is interactive, no logging
 			display_alert "Starting (interactive) kernel ${KERNEL_MENUCONFIG:-menuconfig}" "${LINUXCONFIG}" "debug"
@@ -68,27 +69,32 @@ function kernel_config_initialize() {
 		run_host_command_logged cp -pv "${kernel_config_source_filename}" "${kernel_work_dir}/.config"
 	fi
 
-	# Start by running olddefconfig -- always.
+	# Call the extensions. This is _also_ done during the kernel artifact's prepare_version, for consistent caching.
+	cd "${kernel_work_dir}" || exit_with_error "kernel_work_dir does not exist before call_extensions_kernel_config: ${kernel_work_dir}"
+	call_extensions_kernel_config
+
+	# Run olddefconfig; this is the "safe" way to update the kernel config.
 	# It "updates" the config, using defaults from Kbuild files in the source tree.
 	# It is worthy noting that on the first run, it builds the tools, so the host-side compiler has to be working,
 	# regardless of the cross-build toolchain.
 	cd "${kernel_work_dir}" || exit_with_error "kernel_work_dir does not exist: ${kernel_work_dir}"
 	run_kernel_make olddefconfig
 
-	# Call the extensions. This is _also_ done during the kernel artifact's prepare_version, for consistent caching.
-	call_extensions_kernel_config
-
 	display_alert "Kernel configuration" "${LINUXCONFIG}" "info"
 }
 
+# These kernel config hooks are always called twice, once without being in kernel directory and once with current directory being the kernel work directory.
+# You must check with "if [[ -f .config ]]; then" in which of the two phases you are. Otherwise, functions like "kernel_config_set_y" won't work.
 function call_extensions_kernel_config() {
 	# Run the core-armbian config modifications here, built-in extensions:
 	call_extension_method "armbian_kernel_config" <<- 'ARMBIAN_KERNEL_CONFIG'
 		*Armbian-core default hook point for pre-olddefconfig Kernel config modifications*
 		NOT for user consumption. Do NOT use this hook, this is internal to Armbian.
 		Instead, use `custom_kernel_config` which runs later and can undo anything done by this step.
-		Important: this hook might be run multiple times, and one of them might not have a .config in place.
+		IMPORTANT: this hook might be run multiple times, and one of them might not have a .config in place!
+		Therefore, please check with "if [[ -f .config ]]; then" if you want to modify the kernel config.
 		Either way, the hook _must_ add representative changes to the `kernel_config_modifying_hashes` array, for kernel config hashing.
+		Please note: Manually changing options doesn't check the validity of the .config file. Check for warnings in your build log.
 	ARMBIAN_KERNEL_CONFIG
 
 	# Custom hooks receive a clean / updated config; depending on their modifications, they may need to run olddefconfig again.
@@ -97,8 +103,10 @@ function call_extensions_kernel_config() {
 		Called after ${LINUXCONFIG}.config is put in place (.config).
 		A good place to customize the .config directly.
 		Armbian default Kconfig modifications have already been applied and can be overriden.
-		Important: this hook might be run multiple times, and one of them might not have a .config in place.
+		IMPORTANT: this hook might be run multiple times, and one of them might not have a .config in place!
+		Therefore, please check with "if [[ -f .config ]]; then" if you want to modify the kernel config.
 		Either way, the hook _must_ add representative changes to the `kernel_config_modifying_hashes` array, for kernel config hashing.
+		Please note: Manually changing options doesn't check the validity of the .config file. Check for warnings in your build log.
 	CUSTOM_KERNEL_CONFIG
 }
 
@@ -122,19 +130,17 @@ function kernel_config_finalize() {
 }
 
 function kernel_config_export() {
-	# store kernel config in easily reachable place
+	# export defconfig
+	run_kernel_make savedefconfig
+
+	# store kernel defconfig in easily reachable place (output dir)
 	mkdir -p "${DEST}"/config
-	display_alert "Exporting new kernel config" "$DEST/config/$LINUXCONFIG.config" "info"
-	run_host_command_logged cp -pv .config "${DEST}/config/${LINUXCONFIG}.config"
+	display_alert "Exporting new kernel defconfig" "$DEST/config/$LINUXCONFIG.config" "info"
+	run_host_command_logged cp -pv defconfig "${DEST}/config/${LINUXCONFIG}.config"
 
 	# store back into original LINUXCONFIG too, if it came from there, so it's pending commits when done.
 	if [[ "${kernel_config_source_filename}" != "" ]]; then
 		display_alert "Exporting new kernel config - git commit pending" "${kernel_config_source_filename}" "info"
-		run_host_command_logged cp -pv .config "${kernel_config_source_filename}"
-
-		# export defconfig
-		run_kernel_make savedefconfig
-		run_host_command_logged cp -pv defconfig "${DEST}/config/${LINUXCONFIG}.defconfig"
-		run_host_command_logged cp -pv defconfig "${kernel_config_source_filename}.defconfig"
+		run_host_command_logged cp -pv defconfig "${kernel_config_source_filename}"
 	fi
 }

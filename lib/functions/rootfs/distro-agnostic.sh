@@ -19,7 +19,8 @@ function install_distribution_agnostic() {
 	echo "/dev/mmcblk0p2 /usr $ROOTFS_TYPE defaults 0 2" >> "${SDCARD}"/etc/fstab
 
 	# create modules file
-	local modules=MODULES_${BRANCH^^}
+	local modules=MODULES_${BRANCH^^} # BRANCH, uppercase
+	modules=${modules//-/_}           # replace dashes with underscores
 	if [[ -n "${!modules}" ]]; then
 		tr ' ' '\n' <<< "${!modules}" > "${SDCARD}"/etc/modules
 	elif [[ -n "${MODULES}" ]]; then
@@ -27,7 +28,8 @@ function install_distribution_agnostic() {
 	fi
 
 	# create blacklist files
-	local blacklist=MODULES_BLACKLIST_${BRANCH^^}
+	local blacklist=MODULES_BLACKLIST_${BRANCH^^} # BRANCH, uppercase
+	blacklist=${blacklist//-/_}                   # replace dashes with underscores
 	if [[ -n "${!blacklist}" ]]; then
 		tr ' ' '\n' <<< "${!blacklist}" | sed -e 's/^/blacklist /' > "${SDCARD}/etc/modprobe.d/blacklist-${BOARD}.conf"
 	elif [[ -n "${MODULES_BLACKLIST}" ]]; then
@@ -41,10 +43,6 @@ function install_distribution_agnostic() {
 		MAX_SPEED=$CPUMAX
 		GOVERNOR=$GOVERNOR
 	EOF
-
-	# remove default interfaces file if present
-	# before installing board support package
-	rm -f "${SDCARD}"/etc/network/interfaces
 
 	# disable selinux by default
 	mkdir -p "${SDCARD}"/selinux
@@ -101,16 +99,14 @@ function install_distribution_agnostic() {
 	echo -e "${VENDOR} ${IMAGE_VERSION:-"${REVISION}"} ${RELEASE^} \\l \n" > "${SDCARD}"/etc/issue
 	echo "${VENDOR} ${IMAGE_VERSION:-"${REVISION}"} ${RELEASE^}" > "${SDCARD}"/etc/issue.net
 
-	# PRETTY_NAME changing in os-release is now done in armbian-base-files directly.
+	# Copy SKEL bashrc and profile to root user
+	cp "${SDCARD}"/etc/skel/.bashrc "${SDCARD}"/root/
+	cp "${SDCARD}"/etc/skel/.profile "${SDCARD}"/root/
 
-	# enable few bash aliases enabled in Ubuntu by default to make it even
-	sed "s/#alias ll='ls -l'/alias ll='ls -l'/" -i "${SDCARD}"/etc/skel/.bashrc
-	sed "s/#alias la='ls -A'/alias la='ls -A'/" -i "${SDCARD}"/etc/skel/.bashrc
-	sed "s/#alias l='ls -CF'/alias l='ls -CF'/" -i "${SDCARD}"/etc/skel/.bashrc
-	# root user is already there. Copy bashrc there as well
-	cp "${SDCARD}"/etc/skel/.bashrc "${SDCARD}"/root
+	# Copy systemwide aliases to root user too
+	cp "${SRC}"/packages/bsp/common/etc/skel/.bash_aliases "${SDCARD}"/root/
 
-	# display welcome message at first root login @TODO: what reads this?
+	# display welcome message at first root login which is ready by /usr/sbin/armbian/armbian-firstlogin
 	touch "${SDCARD}"/root/.not_logged_in_yet
 
 	if [[ ${DESKTOP_AUTOLOGIN} == yes ]]; then
@@ -144,6 +140,16 @@ function install_distribution_agnostic() {
 		else
 			echo "  fdtdir ${bootpart_prefix}dtb/" >> "$SDCARD/boot/extlinux/extlinux.conf"
 		fi
+
+		if [[ -n $DEFAULT_OVERLAYS ]]; then
+			DEFAULT_OVERLAYS_ARR=(${DEFAULT_OVERLAYS//,/ })
+			DEFAULT_OVERLAYS_ARR=("${DEFAULT_OVERLAYS_ARR[@]/%/".dtbo"}")
+			DEFAULT_OVERLAYS_ARR=("${DEFAULT_OVERLAYS_ARR[@]/#/"${bootpart_prefix}dtb/${BOOT_FDT_FILE%%/*}/overlay/${OVERLAY_PREFIX}-"}")
+
+			display_alert "Adding to extlinux.conf" "fdtoverlays=${DEFAULT_OVERLAYS_ARR[*]}" "debug"
+			echo "  fdtoverlays ${DEFAULT_OVERLAYS_ARR[*]}" >> "$SDCARD/boot/extlinux/extlinux.conf"
+		fi
+
 	else # ... not extlinux ...
 
 		if [[ -n "${BOOTSCRIPT}" ]]; then # @TODO: && "${BOOTCONFIG}" != "none"
@@ -325,13 +331,6 @@ function install_distribution_agnostic() {
 		desktop_postinstall
 	fi
 
-	# install armbian-config
-	if [[ "${PACKAGE_LIST_RM}" != *armbian-config* ]]; then
-		if [[ $BUILD_MINIMAL != yes ]]; then
-			install_artifact_deb_chroot "armbian-config"
-		fi
-	fi
-
 	# install armbian-zsh
 	if [[ "${PACKAGE_LIST_RM}" != *armbian-zsh* ]]; then
 		if [[ $BUILD_MINIMAL != yes ]]; then
@@ -344,11 +343,6 @@ function install_distribution_agnostic() {
 		install_artifact_deb_chroot "armbian-plymouth-theme"
 	else
 		chroot_sdcard_apt_get_remove --auto-remove plymouth
-	fi
-
-	# install wireguard tools
-	if [[ $WIREGUARD == yes ]]; then
-		install_deb_chroot "wireguard-tools" "remote" # @TODO: move this to some image pkg list in config
 	fi
 
 	# freeze armbian packages
@@ -390,7 +384,14 @@ function install_distribution_agnostic() {
 
 	# enable additional services, if they exist.
 	display_alert "Enabling Armbian services" "systemd" "info"
-	[[ -f "${SDCARD}"/lib/systemd/system/armbian-firstrun.service ]] && chroot_sdcard systemctl --no-reload enable armbian-firstrun.service
+	if [[ -f "${SDCARD}"/lib/systemd/system/armbian-firstrun.service ]]; then
+		# Note: armbian-firstrun starts before the user has a chance to edit the env file's values.
+		# Exceptionaly, the env file can be edited during image build time
+		if test -n "$OPENSSHD_REGENERATE_HOST_KEYS"; then
+			sed -i "s/\(^OPENSSHD_REGENERATE_HOST_KEYS *= *\).*/\1$OPENSSHD_REGENERATE_HOST_KEYS/" "${SDCARD}"/etc/default/armbian-firstrun
+		fi
+		chroot_sdcard systemctl --no-reload enable armbian-firstrun.service
+	fi
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-zram-config.service ]] && chroot_sdcard systemctl --no-reload enable armbian-zram-config.service
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-hardware-optimize.service ]] && chroot_sdcard systemctl --no-reload enable armbian-hardware-optimize.service
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-ramlog.service ]] && chroot_sdcard systemctl --no-reload enable armbian-ramlog.service
@@ -399,8 +400,8 @@ function install_distribution_agnostic() {
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-led-state.service ]] && chroot_sdcard systemctl --no-reload enable armbian-led-state.service
 
 	# switch to beta repository at this stage if building nightly images
-	if [[ $IMAGE_TYPE == nightly && -f "${SDCARD}"/etc/apt/sources.list.d/armbian.list ]]; then
-		sed -i 's/apt/beta/' "${SDCARD}"/etc/apt/sources.list.d/armbian.list
+	if [[ $IMAGE_TYPE == nightly && -f "${SDCARD}"/etc/apt/sources.list.d/armbian.sources ]]; then
+		sed -i 's/apt/beta/' "${SDCARD}"/etc/apt/sources.list.d/armbian.sources
 	fi
 
 	# fix for https://bugs.launchpad.net/ubuntu/+source/blueman/+bug/1542723 @TODO: from ubuntu 15. maybe gone?
@@ -472,6 +473,14 @@ function install_distribution_agnostic() {
 	# save initial armbian-release state
 	cp "${SDCARD}"/etc/armbian-release "${SDCARD}"/etc/armbian-image-release
 
+	# save list of enabled extensions for this image
+	EXTENSIONS=${ENABLE_EXTENSIONS} >> "${SDCARD}"/etc/armbian-image-release
+
+	# store vendor pretty name to image only. We don't need to save this in BSP upgrade
+	# files. Vendor should be only defined at build image stage.
+	[[ -z $VENDORPRETTYNAME ]] && VENDORPRETTYNAME="${VENDOR}"
+	VENDORPRETTYNAME="$VENDORPRETTYNAME" >> "${SDCARD}"/etc/armbian-image-release
+
 	# DNS fix. package resolvconf is not available everywhere
 	if [ -d "${SDCARD}"/etc/resolvconf/resolv.conf.d ] && [ -n "$NAMESERVER" ]; then
 		echo "nameserver $NAMESERVER" > "${SDCARD}"/etc/resolvconf/resolv.conf.d/head
@@ -482,62 +491,6 @@ function install_distribution_agnostic() {
 
 	# enable PubkeyAuthentication
 	sed -i 's/#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' "${SDCARD}"/etc/ssh/sshd_config
-
-	if [[ -f "${SDCARD}"/etc/NetworkManager/NetworkManager.conf ]]; then
-		# configure network manager
-		sed "s/managed=\(.*\)/managed=true/g" -i "${SDCARD}"/etc/NetworkManager/NetworkManager.conf
-
-		## remove network manager defaults to handle eth by default @TODO: why?
-		rm -f "${SDCARD}"/usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf
-
-		# `systemd-networkd.service` will be enabled by `/lib/systemd/system-preset/90-systemd.preset` during first-run.
-		# Mask it to avoid conflict
-		chroot_sdcard systemctl mask systemd-networkd.service
-
-		# most likely we don't need to wait for nm to get online
-		chroot_sdcard systemctl disable NetworkManager-wait-online.service
-
-		# Just regular DNS and maintain /etc/resolv.conf as a file @TODO: this does not apply as of impish at least
-		sed "/dns/d" -i "${SDCARD}"/etc/NetworkManager/NetworkManager.conf
-		sed "s/\[main\]/\[main\]\ndns=default\nrc-manager=file/g" -i "${SDCARD}"/etc/NetworkManager/NetworkManager.conf
-
-		if [[ -n $NM_IGNORE_DEVICES ]]; then
-			mkdir -p "${SDCARD}"/etc/NetworkManager/conf.d/
-			cat <<- EOF > "${SDCARD}"/etc/NetworkManager/conf.d/10-ignore-interfaces.conf
-				[keyfile]
-				unmanaged-devices=$NM_IGNORE_DEVICES
-			EOF
-		fi
-
-	elif [ -d "${SDCARD}"/etc/systemd/network ]; then
-		# enable services
-		chroot_sdcard systemctl enable systemd-networkd.service
-		chroot_sdcard systemctl enable systemd-resolved.service || display_alert "Failed to enable systemd-resolved.service" "" "wrn"
-
-		# Mask `NetworkManager.service` to avoid conflict
-		chroot_sdcard systemctl mask NetworkManager.service
-
-		if [ -e "${SDCARD}"/etc/systemd/timesyncd.conf ]; then
-			chroot_sdcard systemctl enable systemd-timesyncd.service
-		fi
-
-		umask 022
-		cat > "${SDCARD}"/etc/systemd/network/eth0.network <<- __EOF__
-			[Match]
-			Name=eth0
-
-			[Network]
-			#MACAddress=
-			DHCP=ipv4
-			LinkLocalAddressing=ipv4
-			#Address=192.168.1.100/24
-			#Gateway=192.168.1.1
-			#DNS=192.168.1.1
-			#Domains=example.com
-			NTP=0.pool.ntp.org 1.pool.ntp.org
-		__EOF__
-
-	fi
 
 	# avahi daemon defaults if exists
 	[[ -f "${SDCARD}"/usr/share/doc/avahi-daemon/examples/sftp-ssh.service ]] &&

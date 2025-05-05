@@ -84,7 +84,6 @@ function compile_armbian-bsp-cli() {
 		Maintainer: $MAINTAINER <$MAINTAINERMAIL>
 		Section: kernel
 		Priority: optional
-		Suggests: armbian-config
 		Recommends: bsdutils, parted, util-linux, toilet
 		Description: Armbian CLI BSP for board '${BOARD}' branch '${BRANCH}' ${extra_description[@]}
 	EOF
@@ -100,13 +99,18 @@ function compile_armbian-bsp-cli() {
 		BUILD_REPOSITORY_COMMIT=${BUILD_REPOSITORY_COMMIT}
 		LINUXFAMILY=$LINUXFAMILY
 		ARCH=$ARCHITECTURE
+		BOOT_SOC=$BOOT_SOC
 		IMAGE_TYPE=$IMAGE_TYPE
 		BOARD_TYPE=$BOARD_TYPE
 		INITRD_ARCH=$INITRD_ARCH
 		KERNEL_IMAGE_TYPE=$KERNEL_IMAGE_TYPE
+		KERNEL_TARGET=$KERNEL_TARGET
+		KERNEL_TEST_TARGET=$KERNEL_TEST_TARGET
 		FORCE_BOOTSCRIPT_UPDATE=$FORCE_BOOTSCRIPT_UPDATE
 		FORCE_UBOOT_UPDATE=$FORCE_UBOOT_UPDATE
+		OVERLAY_DIR="$OVERLAY_DIR"
 		VENDOR="$VENDOR"
+		VENDORCOLOR="$VENDORCOLOR"
 		VENDORDOCS="$VENDORDOCS"
 		VENDORURL="$VENDORURL"
 		VENDORSUPPORT="$VENDORSUPPORT"
@@ -119,7 +123,9 @@ function compile_armbian-bsp-cli() {
 
 	# copy common files from a premade directory structure
 	# @TODO this includes systemd config, assumes things about serial console, etc, that need dynamism or just to not exist with modern systemd
-	run_host_command_logged rsync -a "${SRC}"/packages/bsp/common/* "${destination}"
+	display_alert "Copying common bsp files" "packages/bsp/common" "info"
+	run_host_command_logged rsync -av "${SRC}"/packages/bsp/common/* "${destination}"
+	wait_for_disk_sync "after rsync'ing package/bsp/common for bsp-cli"
 
 	mkdir -p "${destination}"/usr/share/armbian/
 
@@ -169,14 +175,13 @@ function compile_armbian-bsp-cli() {
 		activate update-initramfs
 	EOF
 
-	# copy distribution support status # @TODO: why? this changes over time and will be out of date
-	local releases=($(find ${SRC}/config/distributions -mindepth 1 -maxdepth 1 -type d))
+	# copy distribution support and upgrade status
+	# this information is used in motd to show status and within armbian-config to perform upgrades
+	declare -a releases=()
+	mapfile -t releases < <(for relorder in "${SRC}"/config/distributions/*/order; do echo "${relorder} $(xargs echo < "${relorder}")"; done | sort -nk2 | sed "s/\/order.*//g")
 	for i in "${releases[@]}"; do
-		echo "$(echo $i | sed 's/.*\///')=$(cat $i/support)" >> "${destination}"/etc/armbian-distribution-status
+		echo "$(echo "$i" | sed 's/.*\///')=$(cat "$i"/support)$(echo ";upgrade" | sed 's/.*\///')=$(cat "$i"/upgrade)" >> "${destination}"/etc/armbian-distribution-status
 	done
-
-	# this is required for NFS boot to prevent deconfiguring the network on shutdown
-	sed -i 's/#no-auto-down/no-auto-down/g' "${destination}"/etc/network/interfaces.default
 
 	# execute $LINUXFAMILY-specific tweaks
 	if [[ $(type -t family_tweaks_bsp) == function ]]; then
@@ -198,16 +203,33 @@ function compile_armbian-bsp-cli() {
 	# This is never run in build context; instead, it's source code is dumped inside a file that is packaged.
 	# It is done this way so we get shellcheck and formatting instead of a huge heredoc.
 	### preinst
-	artifact_package_hook_helper_board_side_functions "preinst" board_side_bsp_cli_preinst  "${preinst_functions[@]}"
+	artifact_package_hook_helper_board_side_functions "preinst" board_side_bsp_cli_preinst "${preinst_functions[@]}"
 	unset board_side_bsp_cli_preinst
 
 	### postrm
-	artifact_package_hook_helper_board_side_functions "postrm" board_side_bsp_cli_postrm  "${postrm_functions[@]}"
+	artifact_package_hook_helper_board_side_functions "postrm" board_side_bsp_cli_postrm "${postrm_functions[@]}"
 	unset board_side_bsp_cli_postrm
 
 	### postinst -- a bit more complex, extendable via postinst_functions which can be customized in hook above
 	artifact_package_hook_helper_board_side_functions "postinst" board_side_bsp_cli_postinst_base "${postinst_functions[@]}" board_side_bsp_cli_postinst_finish
 	unset board_side_bsp_cli_postinst_base board_side_bsp_cli_postinst_update_uboot_bootscript board_side_bsp_cli_postinst_finish
+
+	### preventing upgrading stable kernels beyond version if defined
+	# if freeze variable is removed, upgrade becomes possible again
+	if [[ "${BETA}" != "yes" ]]; then
+		for pin_variants in $(echo $KERNEL_UPGRADE_FREEZE | sed "s/,/ /g"); do
+			extracted_pins=(${pin_variants//@/ })
+			if [[ "${BRANCH}-${LINUXFAMILY}" == "${extracted_pins[0]}" ]]; then
+				cat <<- EOF >> "${destination}"/etc/apt/preferences.d/frozen-armbian
+					Package: linux-*-${extracted_pins[0]}
+					Pin: version ${extracted_pins[1]}
+					Pin-Priority: 999
+				EOF
+			fi
+		done
+	else
+		touch "${destination}"/etc/apt/preferences.d/frozen-armbian
+	fi
 
 	# add some summary to the image # @TODO: another?
 	fingerprint_image "${destination}/etc/armbian.txt"
@@ -245,9 +267,10 @@ function reversion_armbian-bsp-cli_deb_contents() {
 		depends_base_files=""
 	fi
 	cat <<- EOF >> "${control_file_new}"
-		Depends: bash, linux-base, u-boot-tools, initramfs-tools, lsb-release, fping${depends_base_files}
+		Depends: bash, linux-base, u-boot-tools, initramfs-tools, lsb-release, fping, device-tree-compiler${depends_base_files}
 		Replaces: zram-config, armbian-bsp-cli-${BOARD}${EXTRA_BSP_NAME} (<< ${REVISION})
 		Breaks: armbian-bsp-cli-${BOARD}${EXTRA_BSP_NAME} (<< ${REVISION})
+		Provides: armbian-bsp-cli
 	EOF
 
 	artifact_deb_reversion_unpack_data_deb
@@ -338,13 +361,6 @@ function board_side_bsp_cli_preinst() {
 	# tell people to reboot at next login
 	[ "$1" = "upgrade" ] && touch /var/run/.reboot_required
 
-	# convert link to file
-	if [ -L "/etc/network/interfaces" ]; then
-		cp /etc/network/interfaces /etc/network/interfaces.tmp
-		rm /etc/network/interfaces
-		mv /etc/network/interfaces.tmp /etc/network/interfaces
-	fi
-
 	# fixing ramdisk corruption when using lz4 compression method
 	sed -i "s/^COMPRESS=.*/COMPRESS=gzip/" /etc/initramfs-tools/initramfs.conf
 
@@ -408,6 +424,7 @@ function board_side_bsp_cli_postrm() { # not run here
 
 function board_side_bsp_cli_postinst_base() {
 	# Source the armbian-release information file
+	# shellcheck source=/dev/null
 	[ -f /etc/armbian-release ] && . /etc/armbian-release
 
 	# ARMBIAN_PRETTY_NAME is now set in armbian-base-files.
@@ -429,7 +446,6 @@ function board_side_bsp_cli_postinst_base() {
 }
 
 function board_side_bsp_cli_postinst_finish() {
-	[ ! -f "/etc/network/interfaces" ] && [ -f "/etc/network/interfaces.default" ] && cp /etc/network/interfaces.default /etc/network/interfaces
 	ln -sf /var/run/motd /etc/motd
 	rm -f /etc/update-motd.d/00-header /etc/update-motd.d/10-help-text
 
@@ -441,6 +457,9 @@ function board_side_bsp_cli_postinst_finish() {
 	fi
 	if [ ! -f "/etc/default/armbian-zram-config" ] && [ -f /etc/default/armbian-zram-config.dpkg-dist ]; then
 		mv /etc/default/armbian-zram-config.dpkg-dist /etc/default/armbian-zram-config
+	fi
+	if [ ! -f "/etc/default/armbian-firstrun" ]; then
+		mv /etc/default/armbian-firstrun.dpkg-dist /etc/default/armbian-firstrun
 	fi
 
 	if [ -L "/usr/lib/chromium-browser/master_preferences.dpkg-dist" ]; then

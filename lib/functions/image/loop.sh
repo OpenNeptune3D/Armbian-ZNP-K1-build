@@ -19,7 +19,7 @@ function check_loop_device() {
 
 function check_loop_device_internal() {
 	local device="${1}"
-	display_alert "Checking look device" "${device}" "debug"
+	display_alert "Checking loop device" "${device}" "debug"
 	if [[ ! -b "${device}" ]]; then
 		if [[ $CONTAINER_COMPAT == yes && -b "/tmp/${device}" ]]; then
 			display_alert "Creating device node" "${device}"
@@ -82,6 +82,7 @@ function write_uboot_to_loop_image() {
 	fi
 
 	display_alert "Sourcing u-boot install functions" "${uboot_deb}" "info"
+	# shellcheck source=/dev/null
 	source "${TEMP_DIR}"/usr/lib/u-boot/platform_install.sh
 	set -e # make sure, we just included something that might disable it
 

@@ -39,10 +39,23 @@ function prepare_partitions() {
 	# parttype[nfs] is empty
 
 	mkopts[ext4]="-q -m 2" # for a long time we had '-O ^64bit,^metadata_csum' here
+	# Hack: newer versions of e2fsprogs in combination with recent kernels enable orphan_file (FEATURE_C12) by default; that can't be handled by older versions of e2fsprogs
+	#       at the same time, older versions don't know about orphan_file at all, so we can't simply disable for all.
+	# run & parse the version of e2fsprogs to determine if we need to disable orphan_file
+	declare e2fsprogs_version
+	e2fsprogs_version=$(e2fsck -V 2>&1 | head -1 | cut -d " " -f 2 | xargs echo -n)
+	# use linux-version compare to check if the version is at least 1.47
+	if linux-version compare "${e2fsprogs_version}" ge "1.47"; then
+		display_alert "e2fsprogs version" "$e2fsprogs_version supports orphan_file" "info"
+		mkopts[ext4]="-q -m 2 -O ^orphan_file"
+	else
+		display_alert "e2fsprogs version" "$e2fsprogs_version does not support orphan_file" "info"
+	fi
+
 	# mkopts[fat] is empty
-	mkopts[ext2]=''
+	# mkopts[ext2] is empty
 	# mkopts[f2fs] is empty
-	mkopts[btrfs]='-m dup'
+	mkopts[btrfs]='-m dup' # '-m dup' is already the default https://man.archlinux.org/man/mkfs.btrfs.8#m_
 	# mkopts[nilfs2] is empty
 	# mkopts[xfs] is empty
 	# mkopts[nfs] is empty
@@ -65,17 +78,18 @@ function prepare_partitions() {
 	mkfs[xfs]=xfs
 	# mkfs[nfs] is empty
 
-	mountopts[ext4]=',commit=600,errors=remount-ro'
+	mountopts[ext4]=',commit=120,errors=remount-ro' # EXT4 default: 5 (https://www.man7.org/linux/man-pages/man5/ext4.5.html)
 	# mountopts[ext2] is empty
 	# mountopts[fat] is empty
 	# mountopts[f2fs] is empty
-	mountopts[btrfs]=',commit=600'
+	mountopts[btrfs]=',commit=120' # BTRFS default: 30 (https://btrfs.readthedocs.io/en/latest/ch-mount-options.html)
 	# mountopts[nilfs2] is empty
 	# mountopts[xfs] is empty
 	# mountopts[nfs] is empty
 
 	# default BOOTSIZE to use if not specified
 	DEFAULT_BOOTSIZE=256 # MiB
+	SECTOR_SIZE=${SECTOR_SIZE:-512}
 	# size of UEFI partition. 0 for no UEFI. Don't mix UEFISIZE>0 and BOOTSIZE>0
 	UEFISIZE=${UEFISIZE:-0}
 	BIOSSIZE=${BIOSSIZE:-0}
@@ -99,7 +113,7 @@ function prepare_partitions() {
 	fi
 	# Check if we need boot partition
 	# Specialized storage extensions like cryptroot or lvm may require a boot partition
-	if [[ $BOOTSIZE != "0" && ( -n $BOOTFS_TYPE || $ROOTFS_TYPE != ext4 || $BOOTPART_REQUIRED == yes ) ]]; then
+	if [[ $BOOTSIZE != "0" && (-n $BOOTFS_TYPE || $ROOTFS_TYPE != ext4 || $BOOTPART_REQUIRED == yes) ]]; then
 		local bootpart=$((next++))
 		local bootfs=${BOOTFS_TYPE:-ext4}
 		[[ -z $BOOTSIZE || $BOOTSIZE -le 8 ]] && BOOTSIZE=${DEFAULT_BOOTSIZE}
@@ -108,7 +122,7 @@ function prepare_partitions() {
 	fi
 	# Check if we need root partition
 	[[ $ROOTFS_TYPE != nfs ]] &&
-		rootpart=$((next++))
+		local rootpart=$((next++))
 
 	display_alert "calculated rootpart" "rootpart: ${rootpart}" "debug"
 
@@ -166,44 +180,79 @@ function prepare_partitions() {
 			yourself. Good luck.
 		CREATE_PARTITION_TABLE
 	else
-		# Create a script in a bracket shell, then pipe it to fdisk.
-		{
-			[[ "$IMAGE_PARTITION_TABLE" == "msdos" ]] && echo "label: dos" || echo "label: $IMAGE_PARTITION_TABLE"
+		# Create a script in a bracket shell, then use the output of the script in sfdisk.
+		partition_script_output=$(
+			{
+				[[ "$IMAGE_PARTITION_TABLE" == "msdos" ]] && echo "label: dos" || echo "label: $IMAGE_PARTITION_TABLE"
 
-			local next=$OFFSET
-			if [[ -n "$biospart" ]]; then
-				# gpt: BIOS boot
-				local type="21686148-6449-6E6F-744E-656564454649"
-				echo "$biospart : name=\"bios\", start=${next}MiB, size=${BIOSSIZE}MiB, type=${type}"
-				local next=$(($next + $BIOSSIZE))
-			fi
-			if [[ -n "$uefipart" ]]; then
-				# dos: EFI (FAT-12/16/32)
-				# gpt: EFI System
-				[[ "$IMAGE_PARTITION_TABLE" != "gpt" ]] && local type="ef" || local type="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
-				echo "$uefipart : name=\"efi\", start=${next}MiB, size=${UEFISIZE}MiB, type=${type}"
-				local next=$(($next + $UEFISIZE))
-			fi
-			if [[ -n "$bootpart" ]]; then
-				# Linux extended boot
-				[[ "$IMAGE_PARTITION_TABLE" != "gpt" ]] && local type="ea" || local type="BC13C2FF-59E6-4262-A352-B275FD6F7172"
-				if [[ -n "$rootpart" ]]; then
-					echo "$bootpart : name=\"bootfs\", start=${next}MiB, size=${BOOTSIZE}MiB, type=${type}"
-					local next=$(($next + $BOOTSIZE))
-				else
-					# no `size` argument mean "as much as possible"
-					echo "$bootpart : name=\"bootfs\", start=${next}MiB, type=${type}"
+				local next=$OFFSET
+
+				# Legacy BIOS partition
+				if [[ -n "$biospart" ]]; then
+					# gpt: BIOS boot
+					[[ "$IMAGE_PARTITION_TABLE" != "gpt" ]] && exit_with_error "Legacy BIOS partition is not allowed for MBR partition table (${BIOSSIZE} can't be >0)!"
+					local type="21686148-6449-6E6F-744E-656564454649"
+					echo "$biospart : name=\"bios\", start=${next}MiB, size=${BIOSSIZE}MiB, type=${type}"
+					local next=$(($next + $BIOSSIZE))
 				fi
-			fi
-			if [[ -n "$rootpart" ]]; then
-				# dos: Linux
-				# gpt: Linux filesystem
-				[[ "$IMAGE_PARTITION_TABLE" != "gpt" ]] && local type="83" || local type="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
-				# no `size` argument mean "as much as possible"
-				echo "$rootpart : name=\"rootfs\", start=${next}MiB, type=${type}"
-			fi
-		} |
-			run_host_command_logged sfdisk "${SDCARD}".raw || exit_with_error "Partition fail."
+
+				# EFI partition
+				if [[ -n "$uefipart" ]]; then
+					# dos: EFI (FAT-12/16/32)
+					# gpt: EFI System
+					[[ "$IMAGE_PARTITION_TABLE" != "gpt" ]] && local type="ef" || local type="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
+					echo "$uefipart : name=\"efi\", start=${next}MiB, size=${UEFISIZE}MiB, type=${type}"
+					local next=$(($next + $UEFISIZE))
+				fi
+
+				# Linux extended boot loader (XBOOTLDR) partition
+				# See also https://wiki.archlinux.org/title/Partitioning#/boot
+				if [[ -n "$bootpart" ]]; then
+					# dos: Linux extended boot (see https://github.com/util-linux/util-linux/commit/d0c430068206e1215222792e3aa10689f8c632a6)
+					# gpt: Linux extended boot
+					[[ "$IMAGE_PARTITION_TABLE" != "gpt" ]] && local type="ea" || local type="BC13C2FF-59E6-4262-A352-B275FD6F7172"
+					if [[ -n "$rootpart" ]]; then
+						echo "$bootpart : name=\"bootfs\", start=${next}MiB, size=${BOOTSIZE}MiB, type=${type}"
+						local next=$(($next + $BOOTSIZE))
+					else
+						# No 'size' argument means "expand as much as possible"
+						echo "$bootpart : name=\"bootfs\", start=${next}MiB, type=${type}"
+					fi
+				fi
+
+				# Root filesystem partition
+				if [[ -n "$rootpart" ]]; then
+					# dos: Linux
+					# gpt: Linux root
+					if [[ "$IMAGE_PARTITION_TABLE" != "gpt" ]]; then
+						local type="83"
+					else
+						# Linux root has a different Type-UUID for every architecture
+						# See https://uapi-group.org/specifications/specs/discoverable_partitions_specification/
+						# The ${PARTITION_TYPE_UUID_ROOT} variable is defined in each architecture file (e.g. config/sources/arm64.conf)
+						if [[ -n "${PARTITION_TYPE_UUID_ROOT}" ]]; then
+							local type="${PARTITION_TYPE_UUID_ROOT}"
+						else
+							exit_with_error "Missing 'PARTITION_TYPE_UUID_ROOT' variable while partitioning the root filesystem!"
+						fi
+					fi
+					# No 'size' argument means "expand as much as possible"
+					echo "$rootpart : name=\"rootfs\", start=${next}MiB, type=${type}"
+				fi
+			}
+		)
+		# Output the partitioning options from above to the debug log first and then pipe it into the 'sfdisk' command
+		display_alert "Partitioning with the following options" "$partition_script_output" "debug"
+
+		# Check sfdisk version to determine if --sector-size is supported
+		sfdisk_version=$(sfdisk --version | awk '/util-linux/ {print $NF}')
+		sfdisk_version_num=$(echo "$sfdisk_version" | awk -F. '{printf "%d%02d%02d\n", $1, $2, $3}')
+		if [ "$sfdisk_version_num" -ge "24100" ]; then
+			echo "${partition_script_output}" | run_host_command_logged sfdisk --sector-size "$SECTOR_SIZE" "${SDCARD}".raw || exit_with_error "Partitioning failed!"
+		else
+			echo "${partition_script_output}" | run_host_command_logged sfdisk "${SDCARD}".raw || exit_with_error "Partitioning failed!"
+		fi
+
 	fi
 
 	call_extension_method "post_create_partitions" <<- 'POST_CREATE_PARTITIONS'
@@ -216,25 +265,13 @@ function prepare_partitions() {
 	flock -x $FD
 
 	declare -g LOOP
-	# replace losetup --find with own function and do 10 cycles
-	# losetup always return 1st free loop device and in parallel build,
-	# it often happens that same is found which resoults in:
-	# "failed to set up loop device: Device or resource busy"
-	# If we seek random way, chanches of allocating the same are significantly smaller.
-	FIND_LOOP_CYCLES=1
-	while : ; do
-		LOOP=$(find /dev/loop* | grep -Po "(\/dev\/loop\d|\/dev\/loop\d\d)$" | sort -R | head -1)
-		LOOP_COMPARE=$(losetup -l --noheadings --raw --output=NAME | grep $LOOP || true)
-		[[ -z $LOOP_COMPARE ]] && break
-		[[ $FIND_LOOP_CYCLES -gt 10 ]] && exit_with_error "Unable to find free loop device"
-		FIND_LOOP_CYCLES=$(( FIND_LOOP_CYCLES + 1 ))
-	done
-	display_alert "Allocated loop device" "LOOP=${LOOP} in cycle $FIND_LOOP_CYCLES"
-
-	CHECK_LOOP_FOR_SIZE="no" check_loop_device "$LOOP" # initially loop is zero sized, ignore it.
-
-        #--partscan is using to force the kernel for scaning partition table in preventing of partprobe errors
-	run_host_command_logged losetup --partscan "${LOOP}" "${SDCARD}".raw
+	#--partscan is using to force the kernel for scaning partition table in preventing of partprobe errors
+	if [ "$sfdisk_version_num" -ge "24100" ]; then
+		LOOP=$(losetup --show --partscan --find -b "$SECTOR_SIZE" "${SDCARD}".raw) || exit_with_error "Unable to find free loop device"
+	else
+		LOOP=$(losetup --show --partscan --find "${SDCARD}".raw) || exit_with_error "Unable to find free loop device"
+	fi
+	display_alert "Allocated loop device" "LOOP=${LOOP}"
 
 	# loop device was grabbed here, unlock
 	flock -u $FD
@@ -250,8 +287,12 @@ function prepare_partitions() {
 
 	declare root_part_uuid="uninitialized"
 
+	##
+	## ROOT PARTITION
+	##
 	if [[ -n $rootpart ]]; then
-		local rootdevice="${LOOP}p${rootpart}"
+		local rootdevice=${LOOP}p${rootpart}
+		local physical_rootdevice=$rootdevice
 
 		call_extension_method "prepare_root_device" <<- 'PREPARE_ROOT_DEVICE'
 			*Specialized storage extensions typically transform the root device into a mapped device and should hook in here *
@@ -261,10 +302,16 @@ function prepare_partitions() {
 		check_loop_device "$rootdevice"
 		display_alert "Creating rootfs" "$ROOTFS_TYPE on $rootdevice"
 		run_host_command_logged mkfs.${mkfs[$ROOTFS_TYPE]} ${mkopts[$ROOTFS_TYPE]} ${mkopts_label[$ROOTFS_TYPE]:+${mkopts_label[$ROOTFS_TYPE]}"$ROOT_FS_LABEL"} "${rootdevice}"
+
+		#
+		# BEGIN: Options for specific filesystems
 		[[ $ROOTFS_TYPE == ext4 ]] && run_host_command_logged tune2fs -o journal_data_writeback "$rootdevice"
 		if [[ $ROOTFS_TYPE == btrfs && $BTRFS_COMPRESSION != none ]]; then
 			local fscreateopt="-o compress-force=${BTRFS_COMPRESSION}"
 		fi
+		# END: Options for specific filesystems
+		#
+
 		wait_for_disk_sync "after mkfs" # force writes to be really flushed
 
 		# store in readonly global for usage in later hooks
@@ -275,21 +322,71 @@ function prepare_partitions() {
 		run_host_command_logged mount ${fscreateopt} $rootdevice $MOUNT/
 
 		# create fstab (and crypttab) entry
-		local rootfs
 		if [[ $CRYPTROOT_ENABLE == yes ]]; then
 			# map the LUKS container partition via its UUID to be the 'cryptroot' device
-			echo "$ROOT_MAPPER UUID=${root_part_uuid} none luks" >> $SDCARD/etc/crypttab
-			rootfs=$rootdevice # used in fstab
-		else
-			rootfs="UUID=$(blkid -s UUID -o value $rootdevice)"
+			physical_root_part_uuid="$(blkid -s UUID -o value $physical_rootdevice)"
+			echo "$CRYPTROOT_MAPPER UUID=${physical_root_part_uuid} none luks" >> $SDCARD/etc/crypttab
+			run_host_command_logged cat $SDCARD/etc/crypttab
 		fi
-		echo "$rootfs / ${mkfs[$ROOTFS_TYPE]} defaults,noatime${mountopts[$ROOTFS_TYPE]} 0 1" >> $SDCARD/etc/fstab
+
+		if [[ $ROOTFS_TYPE == btrfs ]]; then
+			btrfs_root_subvolume="${BTRFS_ROOT_SUBVOLUME:-@}"
+			mountopts[$ROOTFS_TYPE]='commit=120'
+			run_host_command_logged btrfs subvolume create $MOUNT/$btrfs_root_subvolume
+			# getting the subvolume id of the newly created volume @ to install it
+			# as the default volume for mounting without explicit reference
+
+			run_host_command_logged "btrfs subvolume set-default $MOUNT/$btrfs_root_subvolume"
+
+			call_extension_method "btrfs_root_add_subvolumes" <<- 'BTRFS_ROOT_ADD_SUBVOLUMES'
+				# *custom post btrfs rootfs creation hook*
+				# Called if rootfs btrfs after creating the subvolume "@" for rootfs
+				# Used to create other separate btrfs subvolume if needed.
+				# Mountpoints and fstab records should be created too.
+				run_host_command_logged btrfs subvolume create $MOUNT/@home
+				run_host_command_logged btrfs subvolume create $MOUNT/@var
+				run_host_command_logged btrfs subvolume create $MOUNT/@var_log
+				run_host_command_logged btrfs subvolume create $MOUNT/@var_cache
+				run_host_command_logged btrfs subvolume create $MOUNT/@srv
+			BTRFS_ROOT_ADD_SUBVOLUMES
+
+			run_host_command_logged umount $rootdevice
+			display_alert "Remounting rootfs" "$rootdevice (UUID=${ROOT_PART_UUID})"
+			run_host_command_logged mount -odefaults,${mountopts[$ROOTFS_TYPE]} $rootdevice $MOUNT/
+		fi
+		rootfs="UUID=$(blkid -s UUID -o value $rootdevice)"
+		echo "$rootfs / ${mkfs[$ROOTFS_TYPE]} defaults,${mountopts[$ROOTFS_TYPE]} 0 1" >> $SDCARD/etc/fstab
+		if [[ $ROOTFS_TYPE == btrfs ]]; then
+			call_extension_method "btrfs_root_add_subvolumes_fstab" <<- 'BTRFS_ROOT_ADD_SUBVOLUMES_FSTAB'
+				run_host_command_logged mkdir -p $MOUNT/home
+				run_host_command_logged mount -odefaults,${mountopts[$ROOTFS_TYPE]},subvol=@home $rootdevice $MOUNT/home
+				echo "$rootfs /home btrfs defaults,${mountopts[$ROOTFS_TYPE]},subvol=@home 0 2" >> $SDCARD/etc/fstab
+				run_host_command_logged mkdir -p $MOUNT/var
+				run_host_command_logged mount -odefaults,${mountopts[$ROOTFS_TYPE]},subvol=@var $rootdevice $MOUNT/var
+				echo "$rootfs /var btrfs defaults,${mountopts[$ROOTFS_TYPE]},subvol=@var 0 2" >> $SDCARD/etc/fstab
+				run_host_command_logged mkdir -p $MOUNT/var/log
+				run_host_command_logged mount -odefaults,${mountopts[$ROOTFS_TYPE]},subvol=@var_log $rootdevice $MOUNT/var/log
+				echo "$rootfs /var/log btrfs defaults,${mountopts[$ROOTFS_TYPE]},subvol=@var_log 0 2" >> $SDCARD/etc/fstab
+				run_host_command_logged mkdir -p $MOUNT/var/cache
+				run_host_command_logged mount -odefaults,${mountopts[$ROOTFS_TYPE]},subvol=@var_cache $rootdevice $MOUNT/var/cache
+				echo "$rootfs /var/cache btrfs defaults,${mountopts[$ROOTFS_TYPE]},subvol=@var_cache 0 2" >> $SDCARD/etc/fstab
+				run_host_command_logged mkdir -p  $MOUNT/srv
+				run_host_command_logged mount -odefaults,${mountopts[$ROOTFS_TYPE]},subvol=@srv $rootdevice $MOUNT/srv
+				echo "$rootfs /srv btrfs defaults,${mountopts[$ROOTFS_TYPE]},subvol=@srv 0 2" >> $SDCARD/etc/fstab
+			BTRFS_ROOT_ADD_SUBVOLUMES_FSTAB
+		fi
+
+		run_host_command_logged cat $SDCARD/etc/fstab
+
 	else
 		# update_initramfs will fail if /lib/modules/ doesn't exist
 		mount --bind --make-private $SDCARD $MOUNT/
 		echo "/dev/nfs / nfs defaults 0 0" >> $SDCARD/etc/fstab
 	fi
 
+	##
+	## BOOT (XBOOTLDR) PARTITION
+	##
 	if [[ -n $bootpart ]]; then
 		display_alert "Creating /boot" "$bootfs on ${LOOP}p${bootpart}"
 		check_loop_device "${LOOP}p${bootpart}"
@@ -298,6 +395,10 @@ function prepare_partitions() {
 		run_host_command_logged mount ${LOOP}p${bootpart} $MOUNT/boot/
 		echo "UUID=$(blkid -s UUID -o value ${LOOP}p${bootpart}) /boot ${mkfs[$bootfs]} defaults${mountopts[$bootfs]} 0 2" >> $SDCARD/etc/fstab
 	fi
+
+	##
+	## EFI PARTITION
+	##
 	if [[ -n $uefipart ]]; then
 		display_alert "Creating EFI partition" "FAT32 ${UEFI_MOUNT_POINT} on ${LOOP}p${uefipart} label ${UEFI_FS_LABEL}"
 		check_loop_device "${LOOP}p${uefipart}"
@@ -314,6 +415,9 @@ function prepare_partitions() {
 			echo "UUID=$(blkid -s UUID -o value ${LOOP}p${uefipart}) ${UEFI_MOUNT_POINT} vfat defaults 0 2" >> $SDCARD/etc/fstab
 		fi
 	fi
+	##
+	## END OF PARTITION CREATION
+	##
 
 	display_alert "Writing /tmp as tmpfs in chroot fstab" "$SDCARD/etc/fstab" "debug"
 	echo "tmpfs /tmp tmpfs defaults,nosuid 0 0" >> $SDCARD/etc/fstab
@@ -327,7 +431,7 @@ function prepare_partitions() {
 	if [[ -f $SDCARD/boot/armbianEnv.txt ]]; then
 		display_alert "Found armbianEnv.txt" "${SDCARD}/boot/armbianEnv.txt" "debug"
 		if [[ $CRYPTROOT_ENABLE == yes ]]; then
-			echo "rootdev=$rootdevice cryptdevice=UUID=${root_part_uuid}:$ROOT_MAPPER" >> "${SDCARD}/boot/armbianEnv.txt"
+			echo "rootdev=$rootdevice cryptdevice=UUID=${physical_root_part_uuid}:$CRYPTROOT_MAPPER" >> "${SDCARD}/boot/armbianEnv.txt"
 		else
 			echo "rootdev=$rootfs" >> "${SDCARD}/boot/armbianEnv.txt"
 		fi
@@ -346,8 +450,8 @@ function prepare_partitions() {
 		display_alert "Found boot.ini" "${SDCARD}/boot/boot.ini" "debug"
 		sed -i -e "s/rootfstype \"ext4\"/rootfstype \"$ROOTFS_TYPE\"/" $SDCARD/boot/boot.ini
 		if [[ $CRYPTROOT_ENABLE == yes ]]; then
-			rootpart="UUID=${root_part_uuid}"
-			sed -i 's/^setenv rootdev .*/setenv rootdev "\/dev\/mapper\/'$ROOT_MAPPER' cryptdevice='$rootpart':'$ROOT_MAPPER'"/' $SDCARD/boot/boot.ini
+			rootpart="UUID=${physical_root_part_uuid}"
+			sed -i 's/^setenv rootdev .*/setenv rootdev "\/dev\/mapper\/'$CRYPTROOT_MAPPER' cryptdevice='$rootpart':'$CRYPTROOT_MAPPER'"/' $SDCARD/boot/boot.ini
 		else
 			sed -i 's/^setenv rootdev .*/setenv rootdev "'$rootfs'"/' $SDCARD/boot/boot.ini
 		fi

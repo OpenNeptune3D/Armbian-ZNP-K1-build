@@ -15,12 +15,7 @@ function create_new_rootfs_cache_tarball() {
 	# validate cache_name is set
 	[[ -n "${cache_name}" ]] || exit_with_error "create_new_rootfs_cache_tarball: cache_name is not set"
 
-	# create list of installed packages for debug purposes - this captures it's own stdout.
-	# @TODO: sanity check, compare this with the source of the hash coming from aggregation
-	chroot_sdcard "dpkg -l | grep ^ii | awk '{ print \$2\",\"\$3 }'" > "${cache_fname}.list"
-	echo "${AGGREGATED_ROOTFS_HASH_TEXT}" > "${cache_fname}.hash_text"
-
-	# Show the disk space usage of the rootfs
+	# Show the disk space usage of the rootfs; use only host-side tools, as qemu binary is already undeployed from chroot
 	display_alert "Disk space usage of rootfs" "${RELEASE}:: ${cache_name}" "info"
 	run_host_command_logged "cd ${SDCARD} && " du -h -d 4 -x "." "| sort -h | tail -20"
 	wait_for_disk_sync "after disk-space usage report of rootfs"
@@ -68,7 +63,7 @@ function create_new_rootfs_cache_via_debootstrap() {
 	display_alert "Preparing debootstrap" "for ${DISTRIBUTION}'s ${RELEASE}" "info"
 	case "${DISTRIBUTION}" in
 		Ubuntu)
-			GIT_FIXED_WORKDIR="debootstrap-ubuntu-devel" fetch_from_repo "https://git.launchpad.net/ubuntu/+source/debootstrap" "debootstrap-ubuntu-devel" "branch:ubuntu/devel"
+			GIT_FIXED_WORKDIR="debootstrap-ubuntu-devel" fetch_from_repo "https://git.launchpad.net/ubuntu/+source/debootstrap" "debootstrap-ubuntu-devel" "tag:import/1.0.118ubuntu1.13"
 			debootstrap_wanted_dir="${SRC}/cache/sources/debootstrap-ubuntu-devel"
 			debootstrap_default_script="gutsy"
 			;;
@@ -113,7 +108,7 @@ function create_new_rootfs_cache_via_debootstrap() {
 
 	deboostrap_arguments+=("${RELEASE}" "${SDCARD}/" "${debootstrap_apt_mirror}") # release, path and mirror; always last, positional arguments.
 
-	# Set DEBOOTSTRAP_DIR only for this invocation; if we instead export it, the 2nd stage will fail
+	# Set DEBOOTSTRAP_DIR only for this invocation; if we instead export it, the second stage will fail
 	run_host_command_logged "DEBOOTSTRAP_DIR='${debootstrap_wanted_dir}'" "${debootstrap_bin}" "${deboostrap_arguments[@]}" || {
 		exit_with_error "Debootstrap first stage failed" "${debootstrap_bin} ${RELEASE} ${DESKTOP_APPGROUPS_SELECTED} ${DESKTOP_ENVIRONMENT} ${BUILD_MINIMAL}"
 	}
@@ -121,9 +116,10 @@ function create_new_rootfs_cache_via_debootstrap() {
 
 	skip_target_check="yes" local_apt_deb_cache_prepare "after debootstrap first stage" # just for size reference in logs; skip the target check: debootstrap uses it for second stage.
 
-	deploy_qemu_binary_to_chroot "${SDCARD}" # this is cleaned-up later by post_debootstrap_tweaks() @TODO: which is too late for a cache
+	deploy_qemu_binary_to_chroot "${SDCARD}" "rootfs" # undeployed near the end of this function
 
 	display_alert "Installing base system" "Stage 2/2" "info"
+	declare -g -a if_error_find_files_sdcard=("debootstrap.log") # if command fails, go look for this file and show it's contents during error processing
 	declare -g if_error_detail_message="Debootstrap second stage failed ${RELEASE} ${DESKTOP_APPGROUPS_SELECTED} ${DESKTOP_ENVIRONMENT} ${BUILD_MINIMAL}"
 	chroot_sdcard LC_ALL=C LANG=C /debootstrap/debootstrap --second-stage
 	[[ ! -f "${SDCARD}/bin/bash" ]] && exit_with_error "Debootstrap first stage did not produce /bin/bash"
@@ -181,7 +177,7 @@ function create_new_rootfs_cache_via_debootstrap() {
 	# @TODO: use asset logging for this; actually log contents of the files too
 	run_host_command_logged ls -l "${SDCARD}/usr/share/keyrings"
 	run_host_command_logged ls -l "${SDCARD}/etc/apt/sources.list.d"
-	run_host_command_logged cat "${SDCARD}/etc/apt/sources.list"
+	run_host_command_logged cat "${SDCARD}/etc/apt/sources.list.d/${DISTRIBUTION,,}.sources"
 
 	# stage: update packages list
 	display_alert "Updating package list" "$RELEASE" "info"
@@ -223,7 +219,7 @@ function create_new_rootfs_cache_via_debootstrap() {
 
 	# stage: check md5 sum of installed packages. Just in case. @TODO: rpardini: this should also be done when a cache is used, not only when it is created
 	# lets check only for supported targets only unless forced
-	if [[ "${DISTRIBUTION_STATUS}" == "supported" || "${FORCE_CHECK_MD5_PACKAGES:-"no"}" == "yes" ]]; then
+	if [[ "${DISTRIBUTION_STATUS}" == "supported" && "${FORCE_CHECK_MD5_PACKAGES:-"no"}" == "yes" ]]; then
 		display_alert "Checking MD5 sum of installed packages" "debsums" "info"
 		declare -g if_error_detail_message="Check MD5 sum of installed packages failed"
 		chroot_sdcard debsums --silent
@@ -268,6 +264,9 @@ function create_new_rootfs_cache_via_debootstrap() {
 	# Mask `systemd-firstboot.service` which will prompt locale, timezone and root-password too early.
 	# `armbian-first-run` will do the same thing later
 	chroot_sdcard systemctl mask systemd-firstboot.service
+
+	# undeploy the qemu binary; we don't want to ship the host's qemu binary in the rootfs cache.
+	undeploy_qemu_binary_from_chroot "${SDCARD}" "rootfs"
 
 	# stage: make rootfs cache archive
 	display_alert "Ending debootstrap process and preparing cache" "$RELEASE" "info"

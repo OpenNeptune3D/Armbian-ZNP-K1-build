@@ -107,7 +107,7 @@ function prepare_host_noninteractive() {
 	fi
 
 	# create directory structure # @TODO: this should be close to DEST, otherwise super-confusing
-	mkdir -p "${SRC}"/{cache,output} "${USERPATCHES_PATH}"
+	mkdir -p "${SRC}"/{cache,output} "${USERPATCHES_PATH}" "${SRC}"/output/info
 
 	# @TODO: original: mkdir -p "${DEST}"/debs-beta/extra "${DEST}"/debs/extra "${DEST}"/{config,debug,patch} "${USERPATCHES_PATH}"/overlay "${SRC}"/cache/{sources,hash,hash-beta,toolchain,utility,rootfs} "${SRC}"/.tmp
 	mkdir -p "${USERPATCHES_PATH}"/overlay "${SRC}"/cache/{sources,rootfs} "${SRC}"/.tmp
@@ -117,83 +117,11 @@ function prepare_host_noninteractive() {
 		download_external_toolchains # Mostly deprecated, since SKIP_EXTERNAL_TOOLCHAINS=yes is the default
 	fi
 
-	# NEEDS_BINFMT=yes is set by default build and rootfs artifact build.
-	# if we're building an image, not only packages/artifacts...
-	# ... and the host arch does not match the target arch ...
-	# ... we then require binfmt_misc to be enabled.
-	# "enable arm binary format so that the cross-architecture chroot environment will work"
-	if [[ "${NEEDS_BINFMT:-"no"}" == "yes" ]]; then
-
-		if [[ "${SHOW_DEBUG}" == "yes" ]]; then
-			display_alert "Debugging binfmt - early" "/proc/sys/fs/binfmt_misc/" "debug"
-			run_host_command_logged ls -la /proc/sys/fs/binfmt_misc/ || true
-		fi
-
-		if dpkg-architecture -e "${ARCH}"; then
-			display_alert "Native arch build" "target ${ARCH} on host $(dpkg --print-architecture)" "cachehit"
-		else
-			local failed_binfmt_modprobe=0
-
-			display_alert "Cross arch build" "target ${ARCH} on host $(dpkg --print-architecture)" "debug"
-
-			# Check if binfmt_misc is loaded; if not, try to load it, but don't fail: it might be built in.
-			if grep -q "^binfmt_misc" /proc/modules; then
-				display_alert "binfmt_misc is already loaded" "binfmt_misc already loaded" "debug"
-			else
-				display_alert "binfmt_misc is not loaded" "trying to load binfmt_misc" "debug"
-
-				# try to modprobe. if it fails, emit a warning later, but not here.
-				# this is for the in-container case, where the host already has the module, but won't let the container know about it.
-				modprobe -q binfmt_misc || failed_binfmt_modprobe=1
-			fi
-
-			# Now, /proc/sys/fs/binfmt_misc/ has to be mounted. Mount, or fail with a message
-			if mountpoint -q /proc/sys/fs/binfmt_misc/; then
-				display_alert "binfmt_misc is already mounted" "binfmt_misc already mounted" "debug"
-			else
-				display_alert "binfmt_misc is not mounted" "trying to mount binfmt_misc" "debug"
-				mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc/ || {
-					if [[ $failed_binfmt_modprobe == 1 ]]; then
-						display_alert "Failed to load binfmt_misc module" "modprobe binfmt_misc failed" "wrn"
-					fi
-					display_alert "Check your HOST kernel" "CONFIG_BINFMT_MISC=m is required in host kernel" "warn"
-					display_alert "Failed to mount" "binfmt_misc /proc/sys/fs/binfmt_misc/" "err"
-					exit_with_error "Failed to mount binfmt_misc"
-				}
-				display_alert "binfmt_misc mounted" "binfmt_misc mounted" "debug"
-			fi
-
-			declare host_arch
-			host_arch="$(arch)"
-			local -a wanted_arches=("arm" "aarch64" "x86_64" "riscv64")
-			display_alert "Preparing binfmts for arch" "binfmts: host '${host_arch}', wanted arches '${wanted_arches[*]}'" "debug"
-			declare wanted_arch
-			for wanted_arch in "${wanted_arches[@]}"; do
-				if [[ "${host_arch}" != "${wanted_arch}" ]]; then
-					if [[ ! -e "/proc/sys/fs/binfmt_misc/qemu-${wanted_arch}" ]]; then
-						display_alert "Updating binfmts" "update-binfmts --enable qemu-${wanted_arch}" "debug"
-						if [[ "${host_arch}" == "aarch64" && "${wanted_arch}" == "arm" ]]; then
-							display_alert "Trying to update binfmts - aarch64 (sometimes) does 32-bit sans emulation" "update-binfmts --enable qemu-${wanted_arch}" "debug"
-							run_host_command_logged update-binfmts --enable "qemu-${wanted_arch}" "&>" "/dev/null" "||" "true" # don't fail nor produce output, which can be misleading.
-						else
-							run_host_command_logged update-binfmts --enable "qemu-${wanted_arch}" || display_alert "Failed to update binfmts" "update-binfmts --enable qemu-${wanted_arch}" "err" # log & continue on failure
-						fi
-					fi
-				fi
-			done
-
-			# @TODO: we could create a tiny loop here to test if the binfmt_misc is working, but this is before deps are installed.
-		fi
-
-		if [[ "${SHOW_DEBUG}" == "yes" ]]; then
-			display_alert "Debugging binfmt - late" "/proc/sys/fs/binfmt_misc/" "debug"
-			run_host_command_logged ls -la /proc/sys/fs/binfmt_misc/ || true
-		fi
-
-	fi
+	prepare_host_binfmt_qemu # in qemu-static.sh as most binfmt/qemu logic is there now
 
 	# @TODO: rpardini: this does not belong here, instead with the other templates, pre-configuration.
 	[[ ! -f "${USERPATCHES_PATH}"/customize-image.sh ]] && run_host_command_logged cp -pv "${SRC}"/config/templates/customize-image.sh.template "${USERPATCHES_PATH}"/customize-image.sh
+	[[ ! -f "${USERPATCHES_PATH}"/config-example.conf ]] && run_host_command_logged cp -pv "${SRC}"/config/templates/config-example.conf.template "${USERPATCHES_PATH}"/config-example.conf
 
 	if [[ -d "${USERPATCHES_PATH}" ]]; then
 		# create patches directory structure under USERPATCHES_PATH
@@ -252,6 +180,7 @@ function adaptative_prepare_host_dependencies() {
 		# big bag of stuff from before
 		bc binfmt-support
 		bison
+		bsdextrautils
 		libc6-dev make dpkg-dev gcc # build-essential, without g++
 		ca-certificates ccache cpio
 		device-tree-compiler dialog dirmngr dosfstools
@@ -261,27 +190,29 @@ function adaptative_prepare_host_dependencies() {
 		imagemagick # required for plymouth: converting images / spinners
 		jq          # required for parsing JSON, specially rootfs-caching related.
 		kmod        # this causes initramfs rebuild, but is usually pre-installed, so no harm done unless it's an upgrade
-		libbison-dev libelf-dev libfdt-dev libfile-fcntllock-perl libmpc-dev libfl-dev liblz4-tool
+		libbison-dev libelf-dev libfdt-dev libfile-fcntllock-perl libmpc-dev libfl-dev lz4
 		libncurses-dev libssl-dev libusb-1.0-0-dev
 		linux-base locales lsof
 		ncurses-base ncurses-term # for `make menuconfig`
 		ntpdate
 		patchutils pkg-config pv
-		qemu-user-static
+		"qemu-user-static" "arch-test"
 		rsync
 		swig # swig is needed for some u-boot's. example: "bananapi.conf"
 		u-boot-tools
 		udev # causes initramfs rebuild, but is usually pre-installed.
 		uuid-dev
 		zlib1g-dev
+		gcc-arm-linux-gnueabi # necessary for rockchip64 (and maybe other too) ATF compilation  
 
 		# by-category below
 		file tree expect                         # logging utilities; expect is needed for 'unbuffer' command
 		colorized-logs                           # for ansi2html, ansi2txt, pipetty
 		unzip zip pigz xz-utils pbzip2 lzop zstd # compressors et al
 		parted gdisk fdisk                       # partition tools @TODO why so many?
-		aria2 curl wget axel                     # downloaders et al
+		aria2 curl axel                          # downloaders et al
 		parallel                                 # do things in parallel (used for fast md5 hashing in initrd cache)
+		rdfind                                   # armbian-firmware-full/linux-firmware symlink creation step
 	)
 
 	# @TODO: distcc -- handle in extension?
@@ -289,15 +220,21 @@ function adaptative_prepare_host_dependencies() {
 	### Python
 	host_deps_add_extra_python # See python-tools.sh::host_deps_add_extra_python()
 
-	# Python3 -- required for Armbian's Python tooling, and also for more recent u-boot builds. Needs 3.9+
-	host_dependencies+=("python3-dev" "python3-distutils" "python3-setuptools" "python3-pip")
+	### Python3 -- required for Armbian's Python tooling, and also for more recent u-boot builds. Needs 3.9+; ffi-dev is needed for some Python packages when the wheel is not prebuilt
+	### 'python3-setuptools' and 'python3-pyelftools' moved to requirements.txt to make sure build hosts use the same/latest versions of these tools.
+	### 'python3-dev' depends on distutils, so instead depend on libpython3-dev which doesn't.
+	host_dependencies+=("python3" "libpython3-dev" "libffi-dev")
 
-	# Python2 -- required for some older u-boot builds
-	# Debian 'sid'/'bookworm' and Ubuntu 'lunar' does not carry python2 anymore; in this case some u-boot's might fail to build.
-	if [[ "sid bookworm trixie lunar mantic noble" == *"${host_release}"* ]]; then
-		display_alert "Python2 not available on host release '${host_release}'" "old(er) u-boot builds might/will fail" "wrn"
-	else
+	# Needed for some u-boot's, lest "tools/mkeficapsule.c:21:10: fatal error: gnutls/gnutls.h"
+	host_dependencies+=("libgnutls28-dev")
+
+	### Python2 -- required for some older u-boot builds
+	# Debian newer than 'bookworm' and Ubuntu newer than 'lunar'/'mantic' does not carry python2 anymore; in this case some u-boot's might fail to build.
+	# Last versions to support python2 were Debian 'bullseye' and Ubuntu 'jammy'
+	if [[ "bullseye jammy" == *"${host_release}"* ]]; then
 		host_dependencies+=("python2" "python2-dev")
+	else
+		display_alert "Python2 not available on host release '${host_release}'" "ancient u-boot versions might/will fail to build" "info"
 	fi
 
 	# Only install acng if asked to.
@@ -317,7 +254,7 @@ function adaptative_prepare_host_dependencies() {
 	fi
 
 	if [[ "${wanted_arch}" == "armhf" || "${wanted_arch}" == "all" ]]; then
-		host_dependencies+=("gcc-arm-linux-gnueabihf" "gcc-arm-linux-gnueabi") # from crossbuild-essential-armhf crossbuild-essential-armel
+		host_dependencies+=("gcc-arm-linux-gnueabihf") # from crossbuild-essential-armhf crossbuild-essential-armel
 	fi
 
 	if [[ "${wanted_arch}" == "riscv64" || "${wanted_arch}" == "all" ]]; then
@@ -327,6 +264,12 @@ function adaptative_prepare_host_dependencies() {
 
 	if [[ "${wanted_arch}" != "amd64" ]]; then
 		host_dependencies+=(libc6-amd64-cross) # Support for running x86 binaries (under qemu on other arches)
+	fi
+
+	if [[ "${KERNEL_COMPILER}" == "clang" ]]; then
+		host_dependencies+=("clang")
+		host_dependencies+=("llvm")
+		host_dependencies+=("lld")
 	fi
 
 	declare -g EXTRA_BUILD_DEPS=""

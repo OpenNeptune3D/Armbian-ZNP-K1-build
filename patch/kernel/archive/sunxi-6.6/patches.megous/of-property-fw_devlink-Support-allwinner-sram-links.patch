@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 797fa1df2acd762e661b7ee696c3e8b06005ff21 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Ond=C5=99ej=20Jirman?= <megi@xff.cz>
 Date: Sat, 15 May 2021 21:43:44 +0200
 Subject: of: property: fw_devlink: Support allwinner,sram links
@@ -10,15 +10,15 @@ to.
 
 Signed-off-by: Ondrej Jirman <megi@xff.cz>
 ---
- drivers/of/property.c | 22 ++++++++++
+ drivers/of/property.c | 22 ++++++++++++++++++++++
  1 file changed, 22 insertions(+)
 
 diff --git a/drivers/of/property.c b/drivers/of/property.c
-index cf8dacf3e3b8..5b46ce975734 100644
+index b3f0285e401c..d5c3db716d47 100644
 --- a/drivers/of/property.c
 +++ b/drivers/of/property.c
-@@ -1326,6 +1326,27 @@ static struct device_node *parse_interrupts(struct device_node *np,
- 	return of_irq_parse_one(np, index, &sup_args) ? NULL : sup_args.np;
+@@ -1308,6 +1308,27 @@ static struct device_node *parse_remote_endpoint(struct device_node *np,
+ 	return of_graph_get_remote_port_parent(np);
  }
  
 +static struct device_node *parse_allwinner_sram(struct device_node *np,
@@ -45,7 +45,7 @@ index cf8dacf3e3b8..5b46ce975734 100644
  static const struct supplier_bindings of_supplier_bindings[] = {
  	{ .parse_prop = parse_clocks, },
  	{ .parse_prop = parse_interconnects, },
-@@ -1361,6 +1382,7 @@ static const struct supplier_bindings of_supplier_bindings[] = {
+@@ -1346,6 +1367,7 @@ static const struct supplier_bindings of_supplier_bindings[] = {
  	{ .parse_prop = parse_regulators, },
  	{ .parse_prop = parse_gpio, },
  	{ .parse_prop = parse_gpios, },
@@ -54,5 +54,5 @@ index cf8dacf3e3b8..5b46ce975734 100644
  };
  
 -- 
-Armbian
+2.35.3
 

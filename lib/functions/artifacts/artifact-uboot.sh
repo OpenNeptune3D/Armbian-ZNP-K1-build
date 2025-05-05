@@ -95,11 +95,13 @@ function artifact_uboot_prepare_version() {
 	# Hash variables that affect the build and package of u-boot
 	declare -a vars_to_hash=(
 		"${BOOTCONFIG:-"no_bootconfig"}"
-		"${BOOTDELAY}" "${UBOOT_DEBUGGING}" "${UBOOT_TARGET_MAP}" # general for all families
-		"${BOOT_SCENARIO}" "${BOOT_SUPPORT_SPI}" "${BOOT_SOC}"    # rockchip stuff, sorry.
-		"${DDR_BLOB}" "${BL31_BLOB}" "${MINILOADER_BLOB}"         # More rockchip stuff, even more sorry.
-		"${ATF_COMPILE}" "${ATFBRANCH}" "${ATFPATCHDIR}"          # arm-trusted-firmware stuff
-		"${CRUSTCONFIG}" "${CRUSTBRANCH}" "${CRUSTPATCHDIR}"      # crust stuff
+		"${BOOTDELAY}" "${UBOOT_DEBUGGING}" "${UBOOT_TARGET_MAP}"        # general for all families
+		"${BOOT_SCENARIO}" "${BOOT_SUPPORT_SPI}" "${BOOT_SOC}"           # rockchip stuff, sorry.
+		"${DDR_BLOB}" "${BL31_BLOB}" "${BL32_BLOB}" "${MINILOADER_BLOB}" # More rockchip stuff, even more sorry.
+		"${ATF_COMPILE}" "${ATFBRANCH}" "${ATFPATCHDIR}"                 # arm-trusted-firmware stuff
+		"${CRUSTCONFIG}" "${CRUSTBRANCH}" "${CRUSTPATCHDIR}"             # crust stuff
+		"${IMAGE_PARTITION_TABLE}" "${BOOT_FDT_FILE}" "${SERIALCON}"     # image and kernel related, to be used as reference/docs
+		"${SRC_EXTLINUX}" "${SRC_CMDLINE}"                               # image and kernel related, to be used as reference/docs
 	)
 	declare hash_variables="undetermined" # will be set by calculate_hash_for_variables(), which normalizes the input
 	calculate_hash_for_variables "${vars_to_hash[@]}"

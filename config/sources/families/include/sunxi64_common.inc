@@ -9,29 +9,34 @@
 enable_extension "sunxi-tools"
 declare -g ARCH=arm64
 declare -g ATF_TARGET_MAP="PLAT=$ATF_PLAT DEBUG=1 bl31;;build/$ATF_PLAT/debug/bl31.bin"
-declare -g ATFBRANCH="tag:v2.9.0"
+declare -g ATFBRANCH="tag:lts-v2.12.1"
 declare -g BOOTDELAY=1
 declare -g BOOTPATCHDIR="${BOOTPATCHDIR:-"u-boot-sunxi"}"
 declare -g BOOTBRANCH="${BOOTBRANCH:-"tag:v2024.01"}"
 declare -g BOOTENV_FILE='sunxi.txt'
-UBOOT_TARGET_MAP="${UBOOT_TARGET_MAP:-BINMAN_ALLOW_MISSING=1;;u-boot-sunxi-with-spl.bin}"
+declare -g UBOOT_TARGET_MAP="${UBOOT_TARGET_MAP:-BINMAN_ALLOW_MISSING=1;;u-boot-sunxi-with-spl.bin}"
 declare -g BOOTSCRIPT='boot-sun50i-next.cmd:boot.cmd'
+declare -g OVERLAY_DIR="/boot/dtb/allwinner/overlay"
 declare -g LINUXFAMILY=sunxi64
 
+# shellcheck source=config/sources/families/include/crust_firmware.inc
 source "${BASH_SOURCE%/*}/crust_firmware.inc"
 
 case $BRANCH in
 
 	legacy)
-		declare -g KERNEL_MAJOR_MINOR="6.1" # Major and minor versions of this kernel.
+		declare -g KERNEL_MAJOR_MINOR="6.6" # Major and minor versions of this kernel.
+		declare -g KERNELBRANCH="tag:v6.6.75" # frozen on this version
 		;;
 
 	current)
-		declare -g KERNEL_MAJOR_MINOR="6.6" # Major and minor versions of this kernel.
+		declare -g KERNEL_MAJOR_MINOR="6.12" # Major and minor versions of this kernel.
+		declare -g KERNELBRANCH="tag:v6.12.23"
 		;;
 
 	edge)
-		declare -g KERNEL_MAJOR_MINOR="6.7" # Major and minor versions of this kernel.
+		declare -g KERNEL_MAJOR_MINOR="6.13" # Major and minor versions of this kernel.
+		declare -g KERNELBRANCH="tag:v6.13.11"
 		;;
 esac
 
@@ -49,21 +54,22 @@ write_uboot_platform() {
 }
 
 setup_write_uboot_platform() {
+	local tmp part dev
 	if grep -q "ubootpart" /proc/cmdline; then
 		# mainline with new boot script
-		local tmp=$(cat /proc/cmdline)
+		tmp=$(cat /proc/cmdline)
 		tmp="${tmp##*ubootpart=}"
 		tmp="${tmp%% *}"
-		[[ -n $tmp ]] && local part=$(findfs PARTUUID=$tmp 2> /dev/null)
-		[[ -n $part ]] && local dev=$(lsblk -n -o PKNAME $part 2> /dev/null)
+		[[ -n $tmp ]] && part=$(findfs PARTUUID=$tmp 2> /dev/null)
+		[[ -n $part ]] && dev=$(lsblk -n -o PKNAME $part 2> /dev/null)
 		[[ -n $dev ]] && DEVICE="/dev/$dev"
 	else
 		# legacy or old boot script
-		local tmp=$(cat /proc/cmdline)
+		tmp=$(cat /proc/cmdline)
 		tmp="${tmp##*root=}"
 		tmp="${tmp%% *}"
-		[[ -n $tmp ]] && local part=$(findfs $tmp 2> /dev/null)
-		[[ -n $part ]] && local dev=$(lsblk -n -o PKNAME $part 2> /dev/null)
+		[[ -n $tmp ]] && part=$(findfs $tmp 2> /dev/null)
+		[[ -n $part ]] && dev=$(lsblk -n -o PKNAME $part 2> /dev/null)
 		# do not try to write u-boot to USB devices
 		[[ -n $dev && $dev == mmcblk* ]] && DEVICE="/dev/$dev"
 	fi
