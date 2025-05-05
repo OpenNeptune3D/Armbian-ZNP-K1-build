@@ -27,7 +27,7 @@ cp /tmp/overlay/boot/.OpenNept4une.txt
 apt-get update
 
 apt-get install -y \
-    ustreamer \
+    janus \
     git \
     python3-numpy \
     python3-matplotlib \
