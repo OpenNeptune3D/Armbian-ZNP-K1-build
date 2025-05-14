@@ -9,6 +9,7 @@ dialog
 debconf-utils
 debsums
 dosfstools
+e2fsprogs
 fake-hwclock
 fdisk
 figlet
@@ -39,6 +40,6 @@ tzdata
 u-boot-tools
 usbutils
 wget
-wireless-tools
 wireguard-tools
+wireless-regdb
 wpasupplicant

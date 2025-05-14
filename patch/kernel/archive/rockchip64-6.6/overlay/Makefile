@@ -5,6 +5,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3308-bs.dtbo rk3308-bs@1.3ghz.dtbo \
 	rk3308-emmc.dtbo \
 	rk3308-sdio@10mhz.dtbo rk3308-sdio@4mhz.dtbo \
+	rockchip-sakurapi-rk3308b-ws2812.dtbo \
 	rockchip-rockpi4cplus-usb-host.dtbo \
 	rockchip-rockpro64-lcd.dtbo \
 	rockchip-rk3318-box-cpu-hs.dtbo \
@@ -14,11 +15,13 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	rockchip-rk3318-box-led-conf2.dtbo \
 	rockchip-rk3318-box-led-conf3.dtbo \
 	rockchip-rk3318-box-led-conf4.dtbo \
+	rockchip-rk3318-box-led-conf5.dtbo \
 	rockchip-rk3318-box-wlan-ap6330.dtbo \
 	rockchip-rk3318-box-wlan-ap6334.dtbo \
 	rockchip-rk3318-box-wlan-ext.dtbo \
 	rockchip-rk3328-i2c0.dtbo \
 	rockchip-rk3328-i2s1-pcm5102.dtbo \
+	rockchip-rk3328-mkspi-disable-lcd-spi.dtbo \
 	rockchip-rk3328-opp-1.4ghz.dtbo \
 	rockchip-rk3328-opp-1.5ghz.dtbo \
 	rockchip-rk3328-spi-spidev.dtbo \

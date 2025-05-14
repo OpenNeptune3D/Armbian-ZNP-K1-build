@@ -10,17 +10,15 @@ BOOT_LOGO="desktop"
 BOOT_SCENARIO="blobless"
 BOOT_SUPPORT_SPI=yes
 
-# u-boot v2024.04-rc4 for rockpro64
-BOOTBRANCH_BOARD="tag:v2024.04-rc4"
-BOOTPATCHDIR="v2024.04"
+BOOTBRANCH_BOARD="tag:v2025.01"
+BOOTPATCHDIR="v2025.01"
 
 # Include fw_setenv, configured to point to the correct spot on the SPI Flash
 PACKAGE_LIST_BOARD="libubootenv-tool" # libubootenv-tool provides fw_printenv and fw_setenv, for talking to U-Boot environment
 
 function post_family_config__use_mainline_uboot_rockpro64() {
-	# Use latest lts 2.8 ATF
-	ATFBRANCH='tag:lts-v2.8.16'
-	ATFPATCHDIR="atf-rockchip64" # patches for logging etc
+	# Do not set ATFBRANCH; instead uses the default from rockchip64_common, tested with v2.12.0 as of 2025.01[.09]
+
 	display_alert "$BOARD" "using ATF (blobless) ${ATFBRANCH} for ${BOOTBRANCH_BOARD} u-boot" "info"
 	# bl31.elf is copied directly from ATF build dir to uboot dir (by armbian u-boot build system)
 	UBOOT_TARGET_MAP="BL31=bl31.elf;;u-boot-rockchip.bin u-boot-rockchip-spi.bin"
@@ -36,40 +34,63 @@ function post_family_config__use_mainline_uboot_rockpro64() {
 		flashcp -v -p "$1/u-boot-rockchip-spi.bin" /dev/mtd0
 	}
 }
-
-# From Kwiboo:
-#  ... "note that u-boot mainline for rk3328/rk3399 suffers from a limitation in that the u-boot.bin may not exceed 1000 KiB or the stack may overwrite part of it during runtime, resulting in strange unexplained issues.
-#       This has been fixed in current U-Boot next branch with https://github.com/u-boot/u-boot/commit/5e7cd8a119953dc2f466fea81e230d683ee03493 and should be included with v2024.07-rc1
-#       If your u-boot.bin build output is less than 950 KiB in size you should not suffer from this limitation/issue."
-#  ... "The real limit will be at most 1 MiB - 16 KiB (malloc heap on stack) = 1008 KiB and any additional runtime usage of the stack will take up until U-Boot has been relocated to top of RAM,
-#       lets say an additional 16 KiB (same as malloc heap) to be on the safer side, so I would suggest you check for e.g. < 992 KiB or similar instead of < 1 MiB.
-#       As long as the generated u-boot.bin is < 992 KiB I think it should be safe, and I do not think the stack usage will be that much before relocation so < 1000 KiB may also be fine 😎"
-# rpardini: close call; the u-boot.bin is 994920 bytes. Let's check for >992KiB and break the build if it's too large.
-function post_uboot_custom_postprocess__check_bin_size_less_than_992KiB() {
-	declare one_bin
-	declare -i uboot_bin_size
-	declare -a bins_to_check=("u-boot.bin")
-	for one_bin in "${bins_to_check[@]}"; do
-		uboot_bin_size=$(stat -c %s "${one_bin}")
-		display_alert "Checking u-boot ${BOARD} bin size" "'${one_bin}' is less than 992KiB (1015808 bytes): ${uboot_bin_size} bytes" "info"
-		if [[ ${uboot_bin_size} -ge 1015808 ]]; then
-			display_alert "u-boot for ${BOARD}" "'${one_bin}' is larger than 992KiB (1015808 bytes): ${uboot_bin_size} bytes" "err"
-			exit_with_error "u-boot ${BOARD} bin size check failed"
-		fi
-	done
-}
-
 function post_config_uboot_target__extra_configs_for_rockpro64() {
-	# Taken from https://gitlab.manjaro.org/manjaro-arm/packages/core/uboot-rockpro64/-/blob/master/PKGBUILD
+	# Specific for rockpro64? CONFIG_OF_LIBFDT_OVERLAY=y should be generic
 	display_alert "$BOARD" "u-boot configs for ${BOOTBRANCH_BOARD} u-boot config" "info"
 	run_host_command_logged scripts/config --set-val CONFIG_OF_LIBFDT_OVERLAY "y"
 	run_host_command_logged scripts/config --set-val CONFIG_MMC_HS400_SUPPORT "y"
-	run_host_command_logged scripts/config --set-val CONFIG_USE_PREBOOT "n"
+
+	# upstream defconfig already has env in SPI: https://github.com/u-boot/u-boot/blob/v2025.01/configs/rockpro64-rk3399_defconfig
+
+	display_alert "u-boot for ${BOARD}" "u-boot: enable EFI debugging command" "info"
+	run_host_command_logged scripts/config --enable CMD_EFIDEBUG
+	run_host_command_logged scripts/config --enable CMD_NVEDIT_EFI
+
+	display_alert "u-boot for ${BOARD}" "u-boot: enable more compression support" "info"
+	run_host_command_logged scripts/config --enable CONFIG_LZO
+	run_host_command_logged scripts/config --enable CONFIG_BZIP2
+	run_host_command_logged scripts/config --enable CONFIG_ZSTD
+
+	display_alert "u-boot for ${BOARD}" "u-boot: enable gpio LED support" "info"
+	run_host_command_logged scripts/config --enable CONFIG_LED
+	run_host_command_logged scripts/config --enable CONFIG_LED_GPIO
+
+	display_alert "u-boot for ${BOARD}" "u-boot: enable networking cmds" "info"
+	run_host_command_logged scripts/config --enable CONFIG_CMD_NFS
+	run_host_command_logged scripts/config --enable CONFIG_CMD_WGET
+	run_host_command_logged scripts/config --enable CONFIG_CMD_DNS
+	run_host_command_logged scripts/config --enable CONFIG_PROT_TCP
+	run_host_command_logged scripts/config --enable CONFIG_PROT_TCP_SACK
+
+	# UMS, RockUSB, gadget stuff
+	declare -a enable_configs=("CONFIG_CMD_USB_MASS_STORAGE" "CONFIG_USB_GADGET" "USB_GADGET_DOWNLOAD" "CONFIG_USB_FUNCTION_ROCKUSB" "CONFIG_USB_FUNCTION_ACM" "CONFIG_CMD_ROCKUSB" "CONFIG_CMD_USB_MASS_STORAGE")
+	for config in "${enable_configs[@]}"; do
+		display_alert "u-boot for ${BOARD}/${BRANCH}" "u-boot: enable ${config}" "info"
+		run_host_command_logged scripts/config --enable "${config}"
+	done
+	# Auto-enabled by the above, force off...
+	run_host_command_logged scripts/config --disable USB_FUNCTION_FASTBOOT
+}
+
+function pre_config_uboot_target__rockpro64_patch_uboot_dtsi_for_ums() {
+	display_alert "u-boot for ${BOARD}" "u-boot: add to u-boot dtsi for UMS" "info" # avoid a patch, just append to the dtsi file
+	cat <<- UBOOT_BOARD_DTSI_OTG >> arch/arm/dts/rk3399-rockpro64-u-boot.dtsi
+		&usbdrd_dwc3_0 { status = "okay"; dr_mode = "otg"; };
+	UBOOT_BOARD_DTSI_OTG
+}
+
+# "rockchip-common: boot SD card first, then NVMe, then SATA, then USB, then mmc"
+# On rockpro64, mmc0 is the eMMC, mmc1 is the SD card slot https://github.com/torvalds/linux/blob/master/arch/arm64/boot/dts/rockchip/rk3399-rockpro64.dtsi#L15-L16
+function pre_config_uboot_target__rockpro64_patch_rockchip_common_boot_order() {
+	declare -a rockchip_uboot_targets=("mmc1" "nvme" "scsi" "usb" "mmc0" "pxe" "dhcp" "spi") # for future make-this-generic delight
+	display_alert "u-boot for ${BOARD}/${BRANCH}" "u-boot: adjust boot order to '${rockchip_uboot_targets[*]}'" "info"
+	sed -i -e "s/#define BOOT_TARGETS.*/#define BOOT_TARGETS \"${rockchip_uboot_targets[*]}\"/" include/configs/rockchip-common.h
+	regular_git diff -u include/configs/rockchip-common.h || true
 }
 
 function post_family_tweaks__config_rockpro64_fwenv() {
 	display_alert "Configuring fw_printenv and fw_setenv" "for ${BOARD} and u-boot ${BOOTBRANCH_BOARD}" "info"
-	# Addresses below come from CONFIG_ENV_OFFSET and CONFIG_ENV_SIZE in https://github.com/u-boot/u-boot/blob/v2024.04-rc4/configs/rockpro64-rk3399_defconfig
+	# Addresses below come from CONFIG_ENV_OFFSET and CONFIG_ENV_SIZE in https://github.com/u-boot/u-boot/blob/v2024.07/configs/rockpro64-rk3399_defconfig
 	cat <<- 'FW_ENV_CONFIG' > "${SDCARD}"/etc/fw_env.config
 		# MTD on the SPI for the Rockpro64
 		# MTD device name Device offset Env. size Flash sector size Number of sectors

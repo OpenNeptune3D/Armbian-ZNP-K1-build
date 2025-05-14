@@ -8,19 +8,7 @@ BOOT_LOGO="desktop"
 BOOT_FDT_FILE="rockchip/rk3576-armsom-sige5.dtb"
 BOOT_SCENARIO="spl-blobs"
 IMAGE_PARTITION_TABLE="gpt"
-SRC_EXTLINUX="yes"
-MODULES_BLACKLIST="panfrost"
 BOARD_MAINTAINER=""
-
-function post_family_config_branch_vendor__armsom-sige7_use_vendor_uboot() {
-        display_alert "$BOARD" "vendor u-boot overrides for $BOARD / $BRANCH" "info"
-
-	declare -g BOOTSOURCE="https://github.com/ArmSoM/u-boot.git"
-	declare -g BOOTBRANCH="tag:rk3576"
-	declare -g BOOTPATCHDIR="legacy/u-boot-armsom-rk3576"
-        declare -g BOOTDIR="u-boot-${BOARD}"
-        declare -g UBOOT_TARGET_MAP="BL31=$RKBIN_DIR/$BL31_BLOB TEE=$RKBIN_DIR/$BL32_BLOB spl/u-boot-spl.bin u-boot.dtb u-boot.itb;;idbloader.img u-boot.itb"
-}
 
 function post_family_tweaks__armsom-sige7_naming_audios() {
 	display_alert "$BOARD" "Renaming armsom-sige7 audios" "info"

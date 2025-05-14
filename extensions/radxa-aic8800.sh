@@ -1,10 +1,5 @@
 function extension_finish_config__install_kernel_headers_for_aic8800_dkms() {
 
-	if [[ ( "${KERNEL_MAJOR_MINOR}" < 6.6 ) ]]; then
-		display_alert "Driver compilation is not supported on kernel ${KERNEL_MAJOR_MINOR} or higher" "skipping aic8800 dkms for kernel v${KERNEL_MAJOR_MINOR}" "warn"
-		return 0
-	fi
-
 	if [[ "${KERNEL_HAS_WORKING_HEADERS}" != "yes" ]]; then
 		display_alert "Kernel version has no working headers package" "skipping aic8800 dkms for kernel v${KERNEL_MAJOR_MINOR}" "warn"
 		return 0
@@ -15,7 +10,10 @@ function extension_finish_config__install_kernel_headers_for_aic8800_dkms() {
 
 function post_install_kernel_debs__install_aic8800_dkms_package() {
 
-	[[ ( "${KERNEL_MAJOR_MINOR}" < 6.6 ) ]] && return 0
+	if linux-version compare "${KERNEL_MAJOR_MINOR}" ge 6.15; then
+		display_alert "Kernel version is too recent" "skipping aic8800 dkms for kernel v${KERNEL_MAJOR_MINOR}" "warn"
+		return 0
+	fi
 	[[ "${INSTALL_HEADERS}" != "yes" ]] || [[ "${KERNEL_HAS_WORKING_HEADERS}" != "yes" ]] && return 0
 	[[ -z $AIC8800_TYPE ]] && return 0
 	api_url="https://api.github.com/repos/radxa-pkg/aic8800/releases/latest"
@@ -25,7 +23,7 @@ function post_install_kernel_debs__install_aic8800_dkms_package() {
 	aic8800_sdio_url="https://github.com/radxa-pkg/aic8800/releases/download/${latest_version}/aic8800-sdio-dkms_${latest_version}_all.deb"
 	aic8800_usb_url="https://github.com/radxa-pkg/aic8800/releases/download/${latest_version}/aic8800-usb-dkms_${latest_version}_all.deb"
 	if [[ "${GITHUB_MIRROR}" == "ghproxy" ]]; then
-		ghproxy_header="https://mirror.ghproxy.com/"
+		ghproxy_header="https://ghfast.top/"
 		aic8800_firmware_url=${ghproxy_header}${aic8800_firmware_url}
 		aic8800_pcie_url=${ghproxy_header}${aic8800_pcie_url}
 		aic8800_sdio_url=${ghproxy_header}${aic8800_sdio_url}
@@ -53,4 +51,13 @@ function post_install_kernel_debs__install_aic8800_dkms_package() {
 	declare -ag if_error_find_files_sdcard=("/var/lib/dkms/aic8800*/*/build/*.log")
 	use_clean_environment="yes" chroot_sdcard_apt_get_install "/tmp/${aic8800_dkms_file_name} /tmp/aic8800-firmware_${latest_version}_all.deb"
 	use_clean_environment="yes" chroot_sdcard "rm -f /tmp/aic8800*.deb"
+	use_clean_environment="yes" chroot_sdcard "mkdir -p /usr/lib/systemd/network/"
+	use_clean_environment="yes" chroot_sdcard 'cat <<- EOF > /usr/lib/systemd/network/50-radxa-aic8800.link
+		[Match]
+		OriginalName=wlan*
+		Driver=usb
+
+		[Link]
+		NamePolicy=kernel
+	EOF'
 }

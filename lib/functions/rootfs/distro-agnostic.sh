@@ -99,16 +99,14 @@ function install_distribution_agnostic() {
 	echo -e "${VENDOR} ${IMAGE_VERSION:-"${REVISION}"} ${RELEASE^} \\l \n" > "${SDCARD}"/etc/issue
 	echo "${VENDOR} ${IMAGE_VERSION:-"${REVISION}"} ${RELEASE^}" > "${SDCARD}"/etc/issue.net
 
-	# PRETTY_NAME changing in os-release is now done in armbian-base-files directly.
+	# Copy SKEL bashrc and profile to root user
+	cp "${SDCARD}"/etc/skel/.bashrc "${SDCARD}"/root/
+	cp "${SDCARD}"/etc/skel/.profile "${SDCARD}"/root/
 
-	# enable few bash aliases enabled in Ubuntu by default to make it even
-	sed "s/#alias ll='ls -l'/alias ll='ls -l'/" -i "${SDCARD}"/etc/skel/.bashrc
-	sed "s/#alias la='ls -A'/alias la='ls -A'/" -i "${SDCARD}"/etc/skel/.bashrc
-	sed "s/#alias l='ls -CF'/alias l='ls -CF'/" -i "${SDCARD}"/etc/skel/.bashrc
-	# root user is already there. Copy bashrc there as well
-	cp "${SDCARD}"/etc/skel/.bashrc "${SDCARD}"/root
+	# Copy systemwide aliases to root user too
+	cp "${SRC}"/packages/bsp/common/etc/skel/.bash_aliases "${SDCARD}"/root/
 
-	# display welcome message at first root login @TODO: what reads this?
+	# display welcome message at first root login which is ready by /usr/sbin/armbian/armbian-firstlogin
 	touch "${SDCARD}"/root/.not_logged_in_yet
 
 	if [[ ${DESKTOP_AUTOLOGIN} == yes ]]; then
@@ -333,13 +331,6 @@ function install_distribution_agnostic() {
 		desktop_postinstall
 	fi
 
-	# install armbian-config
-	if [[ "${PACKAGE_LIST_RM}" != *armbian-config* ]]; then
-		if [[ $BUILD_MINIMAL != yes ]]; then
-			install_artifact_deb_chroot "armbian-config"
-		fi
-	fi
-
 	# install armbian-zsh
 	if [[ "${PACKAGE_LIST_RM}" != *armbian-zsh* ]]; then
 		if [[ $BUILD_MINIMAL != yes ]]; then
@@ -352,11 +343,6 @@ function install_distribution_agnostic() {
 		install_artifact_deb_chroot "armbian-plymouth-theme"
 	else
 		chroot_sdcard_apt_get_remove --auto-remove plymouth
-	fi
-
-	# install wireguard tools
-	if [[ $WIREGUARD == yes ]]; then
-		install_deb_chroot "wireguard-tools" "remote" # @TODO: move this to some image pkg list in config
 	fi
 
 	# freeze armbian packages
@@ -398,7 +384,14 @@ function install_distribution_agnostic() {
 
 	# enable additional services, if they exist.
 	display_alert "Enabling Armbian services" "systemd" "info"
-	[[ -f "${SDCARD}"/lib/systemd/system/armbian-firstrun.service ]] && chroot_sdcard systemctl --no-reload enable armbian-firstrun.service
+	if [[ -f "${SDCARD}"/lib/systemd/system/armbian-firstrun.service ]]; then
+		# Note: armbian-firstrun starts before the user has a chance to edit the env file's values.
+		# Exceptionaly, the env file can be edited during image build time
+		if test -n "$OPENSSHD_REGENERATE_HOST_KEYS"; then
+			sed -i "s/\(^OPENSSHD_REGENERATE_HOST_KEYS *= *\).*/\1$OPENSSHD_REGENERATE_HOST_KEYS/" "${SDCARD}"/etc/default/armbian-firstrun
+		fi
+		chroot_sdcard systemctl --no-reload enable armbian-firstrun.service
+	fi
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-zram-config.service ]] && chroot_sdcard systemctl --no-reload enable armbian-zram-config.service
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-hardware-optimize.service ]] && chroot_sdcard systemctl --no-reload enable armbian-hardware-optimize.service
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-ramlog.service ]] && chroot_sdcard systemctl --no-reload enable armbian-ramlog.service
@@ -407,8 +400,8 @@ function install_distribution_agnostic() {
 	[[ -f "${SDCARD}"/lib/systemd/system/armbian-led-state.service ]] && chroot_sdcard systemctl --no-reload enable armbian-led-state.service
 
 	# switch to beta repository at this stage if building nightly images
-	if [[ $IMAGE_TYPE == nightly && -f "${SDCARD}"/etc/apt/sources.list.d/armbian.list ]]; then
-		sed -i 's/apt/beta/' "${SDCARD}"/etc/apt/sources.list.d/armbian.list
+	if [[ $IMAGE_TYPE == nightly && -f "${SDCARD}"/etc/apt/sources.list.d/armbian.sources ]]; then
+		sed -i 's/apt/beta/' "${SDCARD}"/etc/apt/sources.list.d/armbian.sources
 	fi
 
 	# fix for https://bugs.launchpad.net/ubuntu/+source/blueman/+bug/1542723 @TODO: from ubuntu 15. maybe gone?
@@ -479,6 +472,14 @@ function install_distribution_agnostic() {
 
 	# save initial armbian-release state
 	cp "${SDCARD}"/etc/armbian-release "${SDCARD}"/etc/armbian-image-release
+
+	# save list of enabled extensions for this image
+	EXTENSIONS=${ENABLE_EXTENSIONS} >> "${SDCARD}"/etc/armbian-image-release
+
+	# store vendor pretty name to image only. We don't need to save this in BSP upgrade
+	# files. Vendor should be only defined at build image stage.
+	[[ -z $VENDORPRETTYNAME ]] && VENDORPRETTYNAME="${VENDOR}"
+	VENDORPRETTYNAME="$VENDORPRETTYNAME" >> "${SDCARD}"/etc/armbian-image-release
 
 	# DNS fix. package resolvconf is not available everywhere
 	if [ -d "${SDCARD}"/etc/resolvconf/resolv.conf.d ] && [ -n "$NAMESERVER" ]; then

@@ -2,7 +2,7 @@
 BOARD_NAME="Lubancat2"
 BOARDFAMILY="rk35xx"
 BOARD_FIRMWARE_INSTALL="-full"
-BOARD_MAINTAINER="Andyshrk"
+BOARD_MAINTAINER="andyshrk"
 BOOTCONFIG="lubancat-2-rk3568_defconfig"
 KERNEL_TARGET="edge"
 FULL_DESKTOP="yes"
@@ -16,8 +16,8 @@ function post_family_config_branch_edge__lubancat_2_use_mainline_uboot() {
 	display_alert "$BOARD" "Using mainline U-Boot for $BOARD / $BRANCH" "info"
 
 	declare -g BOOTSOURCE="https://github.com/u-boot/u-boot.git" # We ❤️ Mainline U-Boot
-	declare -g BOOTBRANCH="tag:v2024.07"
-	declare -g BOOTPATCHDIR="v2024.07"
+	declare -g BOOTBRANCH="tag:v2025.04"
+	declare -g BOOTPATCHDIR="v2025.04"
 	# Don't set BOOTDIR, allow shared U-Boot source directory for disk space efficiency
 
 	declare -g UBOOT_TARGET_MAP="BL31=${RKBIN_DIR}/${BL31_BLOB} ROCKCHIP_TPL=${RKBIN_DIR}/${DDR_BLOB};;u-boot-rockchip.bin"

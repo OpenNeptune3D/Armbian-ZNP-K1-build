@@ -119,7 +119,6 @@ function create_image_from_sdcard_rootfs() {
 	wait_for_disk_sync "before umount MOUNT"
 
 	umount_chroot_recursive "${MOUNT}" "MOUNT"
-	[[ $CRYPTROOT_ENABLE == yes ]] && cryptsetup luksClose "$ROOT_MAPPER"
 
 	call_extension_method "post_umount_final_image" "config_post_umount_final_image" <<- 'POST_UMOUNT_FINAL_IMAGE'
 		*allow config to hack into the image after the unmount*
@@ -216,7 +215,7 @@ function move_images_to_final_destination() {
 		done
 	else
 		display_alert "Moving artefacts using rsync to final destination" "${version}" "info"
-		run_host_command_logged rsync -av --no-owner --no-group --remove-source-files "${DESTIMG}/${version}"* "${FINALDEST}"
+		run_host_command_logged rsync -av --sparse --no-owner --no-group --remove-source-files "${DESTIMG}/${version}"* "${FINALDEST}"
 		run_host_command_logged rm -rfv --one-file-system "${DESTIMG}"
 	fi
 	return 0

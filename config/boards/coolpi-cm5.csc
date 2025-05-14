@@ -1,7 +1,7 @@
 # Rockchip RK3588 SoC octa core 4-16GB SoC 2.5GBe PoE eMMC USB3 NVME
 BOARD_NAME="CoolPi CM5"
 BOARDFAMILY="rockchip-rk3588"
-BOARD_MAINTAINER="Andy Yan"
+BOARD_MAINTAINER="andyshrk"
 BOARD_FIRMWARE_INSTALL="-full"
 BOOT_SOC="rk3588"
 BOOTCONFIG="coolpi-cm5-evb-rk3588_defconfig"
@@ -20,7 +20,7 @@ function post_family_config_branch_edge__coolpi-cm5_use_mainline_uboot() {
 
 	declare -g BOOTSOURCE="https://github.com/Kwiboo/u-boot-rockchip.git" # Kwiboo U-Boot
 	unset BOOTBRANCH
-	unset BOOTPATCHDIR
+	declare -g BOOTPATCHDIR="v2024.07-coolpi-cm5"
 	declare -g BOOTBRANCH_BOARD="tag:v2024.07"
 	declare -g BOOTDIR="u-boot-${BOARD}" # do not share u-boot directory
 	declare -g UBOOT_TARGET_MAP="BL31=${RKBIN_DIR}/${BL31_BLOB} ROCKCHIP_TPL=${RKBIN_DIR}/${DDR_BLOB};;u-boot-rockchip.bin u-boot-rockchip-spi.bin"

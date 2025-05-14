@@ -47,6 +47,7 @@ function do_main_configuration() {
 		unset VENDORSUPPORT,VENDORPRIVACY,VENDORBUGS,VENDORLOGO,ROOTPWD,MAINTAINER,MAINTAINERMAIL
 	fi
 
+	[[ -z $VENDORCOLOR ]] && VENDORCOLOR="247;16;0"                           # RGB values for MOTD logo
 	[[ -z $VENDORURL ]] && VENDORURL="https://duckduckgo.com/"
 	[[ -z $VENDORSUPPORT ]] && VENDORSUPPORT="https://community.armbian.com/"
 	[[ -z $VENDORPRIVACY ]] && VENDORPRIVACY="https://duckduckgo.com/"
@@ -60,6 +61,10 @@ function do_main_configuration() {
 	display_alert "DEST_LANG..." "DEST_LANG: ${DEST_LANG}" "debug"
 
 	declare -g SKIP_EXTERNAL_TOOLCHAINS="${SKIP_EXTERNAL_TOOLCHAINS:-yes}" # don't use any external toolchains, by default.
+	declare -g USE_CCACHE="${USE_CCACHE:-no}"                              # stop using ccache as our worktree is more effective
+
+	# Armbian config is central tool used in all builds. As its build externally, we have moved it to extension. Enable it here.
+	enable_extension "armbian-config"
 
 	# Network stack to use, default to network-manager; configuration can override this.
 	# Will be made read-only further down.
@@ -93,7 +98,7 @@ function do_main_configuration() {
 	USEALLCORES=yes # Use all CPU cores for compiling
 
 	[[ -z $EXIT_PATCHING_ERROR ]] && EXIT_PATCHING_ERROR="" # exit patching if failed
-	[[ -z $HOST ]] && HOST="$BOARD"                         # set hostname to the board
+	[[ -z $HOST ]] && HOST="$BOARD"
 	cd "${SRC}" || exit
 
 	[[ -z "${CHROOT_CACHE_VERSION}" ]] && CHROOT_CACHE_VERSION=7
@@ -166,10 +171,10 @@ function do_main_configuration() {
 	# Support for LUKS / cryptroot
 	if [[ $CRYPTROOT_ENABLE == yes ]]; then
 		enable_extension "fs-cryptroot-support" # add the tooling needed, cryptsetup
-		ROOT_MAPPER="armbian-root"              # TODO: fixed name can't be used for parallel image building (rpardini: ?)
 		if [[ -z $CRYPTROOT_PASSPHRASE ]]; then # a passphrase is mandatory if rootfs encryption is enabled
 			exit_with_error "Root encryption is enabled but CRYPTROOT_PASSPHRASE is not set"
 		fi
+		[[ -z $CRYPTROOT_MAPPER ]] && CRYPTROOT_MAPPER="armbian-root" # TODO: fixed name can't be used for parallel image building (rpardini: ?)
 		[[ -z $CRYPTROOT_SSH_UNLOCK ]] && CRYPTROOT_SSH_UNLOCK=yes
 		[[ -z $CRYPTROOT_SSH_UNLOCK_PORT ]] && CRYPTROOT_SSH_UNLOCK_PORT=2022
 		# Default to pdkdf2, this used to be the default with cryptroot <= 2.0, however
@@ -186,8 +191,9 @@ function do_main_configuration() {
 		china)
 			[[ -z $USE_MAINLINE_GOOGLE_MIRROR ]] && [[ -z $MAINLINE_MIRROR ]] && MAINLINE_MIRROR=tuna
 			[[ -z $USE_GITHUB_UBOOT_MIRROR ]] && [[ -z $UBOOT_MIRROR ]] && UBOOT_MIRROR=gitee
-			[[ -z $GITHUB_MIRROR ]] && GITHUB_MIRROR=gitclone
+			[[ -z $GITHUB_MIRROR ]] && GITHUB_MIRROR=ghproxy
 			[[ -z $DOWNLOAD_MIRROR ]] && DOWNLOAD_MIRROR=china
+			[[ -z $GHCR_MIRROR ]] && GHCR_MIRROR=nju
 			;;
 		*) ;;
 
@@ -238,7 +244,7 @@ function do_main_configuration() {
 			declare -g -r GITHUB_SOURCE='https://hub.fastgit.xyz'
 			;;
 		ghproxy)
-			[[ -z $GHPROXY_ADDRESS ]] && GHPROXY_ADDRESS=mirror.ghproxy.com
+			[[ -z $GHPROXY_ADDRESS ]] && GHPROXY_ADDRESS=ghfast.top
 			declare -g -r GITHUB_SOURCE="https://${GHPROXY_ADDRESS}/https://github.com"
 			;;
 		gitclone)
@@ -251,8 +257,11 @@ function do_main_configuration() {
 
 	case $GHCR_MIRROR in
 		dockerproxy)
-			GHCR_MIRROR_ADDRESS="${GHCR_MIRROR_ADDRESS:-"ghcr.dockerproxy.com"}"
+			GHCR_MIRROR_ADDRESS="${GHCR_MIRROR_ADDRESS:-"ghcr.dockerproxy.net"}"
 			declare -g -r GHCR_SOURCE=$GHCR_MIRROR_ADDRESS
+			;;
+		nju)
+			declare -g -r GHCR_SOURCE='ghcr.nju.edu.cn'
 			;;
 		*)
 			declare -g -r GHCR_SOURCE='ghcr.io'
@@ -263,7 +272,6 @@ function do_main_configuration() {
 	[[ -z $OFFSET ]] && OFFSET=4 # offset to 1st partition (we use 4MiB boundaries by default)
 	[[ -z $ARCH ]] && ARCH=arm64 # makes little sense to default to anything... # @TODO: remove, but check_config_userspace_release_and_desktop requires it
 	ATF_COMPILE=yes              # @TODO: move to armhf/arm64
-	[[ -z $WIREGUARD ]] && WIREGUARD="yes"
 	[[ -z $EXTRAWIFI ]] && EXTRAWIFI="yes"
 	[[ -z $PLYMOUTH ]] && PLYMOUTH="yes"
 	[[ -z $AUFS ]] && AUFS="yes"
@@ -340,8 +348,6 @@ function do_main_configuration() {
 	declare -g -r PACKAGE_LIST_FAMILY="${PACKAGE_LIST_FAMILY}"
 	declare -g -r PACKAGE_LIST_FAMILY_REMOVE="${PACKAGE_LIST_FAMILY_REMOVE}"
 
-	if [[ $RELEASE == trixie || $ARCH == riscv64 ]]; then remove_packages "cpufrequtils"; fi # this will remove from rootfs as well
-
 	display_alert "Done with do_main_configuration" "do_main_configuration" "debug"
 }
 
@@ -356,7 +362,7 @@ function do_extra_configuration() {
 	[[ -z $BOOTPATCHDIR ]] && BOOTPATCHDIR="u-boot-$LINUXFAMILY" # @TODO move to hook
 	[[ -z $ATFPATCHDIR ]] && ATFPATCHDIR="atf-$LINUXFAMILY"
 
-	if [[ "$RELEASE" =~ ^(focal|jammy|noble|oracular)$ ]]; then
+	if [[ "$RELEASE" =~ ^(focal|jammy|noble|oracular|plucky)$ ]]; then
 		DISTRIBUTION="Ubuntu"
 	else
 		DISTRIBUTION="Debian"
