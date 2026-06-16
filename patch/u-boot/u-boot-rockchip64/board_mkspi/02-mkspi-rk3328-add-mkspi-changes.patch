@@ -35,7 +35,7 @@ index 20ca255664..27f414c4be 100755
 -		gpios = <&grf_gpio 0 GPIO_ACTIVE_HIGH>;
 -		states = <1800000 0x1>,
 -			 <3300000 0x0>;
-+		gpios = <&gpio2 RK_PC4 GPIO_ACTIVE_HIGH>;
++		gpios = <&gpio2 RK_PB4 GPIO_ACTIVE_HIGH>;
 +		pinctrl-0 = <&sdio_vcc_pin>;
 +		pinctrl-names = "default";		
 +		states = <1800000 0x0>,
@@ -122,7 +122,7 @@ index 20ca255664..27f414c4be 100755
  	usb2 {
  		usb20_host_drv: usb20-host-drv {
 -			rockchip,pins = <1 RK_PD2 RK_FUNC_GPIO &pcfg_pull_none>;
-+			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
++			rockchip,pins = <2 RK_PD2 RK_FUNC_GPIO &pcfg_pull_none>;
 +		};
 +	};
 +
@@ -182,4 +182,3 @@ index 1514ee63bb..2c80464d5a 100755
  CONFIG_TPL_SYS_MALLOC_SIMPLE=y
 -- 
 Created with Armbian build tools https://github.com/armbian/build
-

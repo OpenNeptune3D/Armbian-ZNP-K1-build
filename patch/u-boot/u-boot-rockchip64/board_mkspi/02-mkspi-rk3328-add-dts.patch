@@ -183,7 +183,7 @@ index 0000000000..20ca255664
 +};
 +
 +&hdmi {
-+	status = "okay";
++	status = "disabled";
 +};
 +
 +&hdmiphy {
@@ -191,7 +191,7 @@ index 0000000000..20ca255664
 +};
 +
 +&hdmi_sound {
-+	status = "okay";
++	status = "disabled";
 +};
 +
 +&i2c1 {
@@ -304,11 +304,11 @@ index 0000000000..20ca255664
 +};
 +
 +&i2s0 {
-+	status = "okay";
++	status = "disabled";
 +};
 +
 +&i2s1 {
-+	status = "okay";
++	status = "disabled";
 +};
 +
 +&io_domains {
@@ -401,4 +401,3 @@ index 0000000000..20ca255664
 +};
 -- 
 Created with Armbian build tools https://github.com/armbian/build
-
