@@ -1,0 +1,13 @@
+[Unit]
+Description=ZNP-K1 IRQ affinity (override Armbian rockchip64 eth0 pinning)
+After=armbian-hardware-optimize.service
+DefaultDependencies=no
+Before=basic.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/znp-k1-irq-affinity.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target
