@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Elegoo ZNP-K1 V1.1-V2.0 printer controller, Neptune 4 Plus / Max revision.
+ *
+ * Not booted by default by any OpenNept4une image; select it with
+ * fdtfile=rockchip/rk3328-znp-k1-n4plus-n4max.dtb in /boot/armbianEnv.txt.
+ */
+
+#include "rk3328-znp-k1-n4-v1.1.dts"
+#include "rk3328-znp-k1-v2-io.dtsi"
+
+/ {
+	model = "Elegoo Neptune 4 Plus / Max (ZNP-K1 V1.1-V2.0)";
+};

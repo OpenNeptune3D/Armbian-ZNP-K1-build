@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Elegoo ZNP-K1 V1.x printer controller (Neptune 4 / 4 Pro).
+ *
+ * A Makerbase MKS-PI derivative. This is the board description booted by
+ * the OpenNept4une Neptune4+Pro image.
+ */
+
+#include "rk3328-mkspi.dts"
+
+/ {
+	model = "Elegoo ZNP-K1 V1.x";
+
+	vcc_host2_5v: vcc-host2-5v-regulator {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usb30_host_drv>;
+		regulator-name = "vcc_host2_5v";
+		regulator-always-on;
+		vin-supply = <&vcc_sys>;
+	};
+};
+
+&cpu0_opp_table {
+	opp-408000000 {
+		opp-microvolt = <1000000>;
+	};
+
+	opp-600000000 {
+		opp-microvolt = <1000000>;
+	};
+
+	opp-816000000 {
+		opp-microvolt = <1050000>;
+	};
+
+	opp-1008000000 {
+		opp-microvolt = <1150000>;
+	};
+
+	opp-1200000000 {
+		opp-microvolt = <1275000>;
+	};
+
+	opp-1296000000 {
+		status = "disabled";
+	};
+};
+
+&dmc_opp_table {
+	opp-786000000 {
+		opp-microvolt = <1125000 1125000 12000000>;
+		status = "disabled";
+	};
+
+	opp-798000000 {
+		opp-microvolt = <1125000 1125000 12000000>;
+		status = "disabled";
+	};
+
+	opp-840000000 {
+		opp-microvolt = <1125000 1125000 12000000>;
+	};
+
+	opp-924000000 {
+		opp-microvolt = <1150000 1150000 12000000>;
+	};
+};
+
+&hdmi {
+	status = "disabled";
+};
+
+&hdmi_sound {
+	status = "disabled";
+};
+
+&iep_mmu {
+	status = "disabled";
+};
+
+&pinctrl {
+	usb3 {
+		usb30_host_drv: usb30-host-drv {
+			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&spi0 {
+	spi_for_lcd@0 {
+		status = "disabled";
+	};
+
+	spi_for_touch@1 {
+		status = "disabled";
+	};
+};
+
+/*
+ * uart0 (MCU link) keeps the DMA channels from rk3328.dtsi on purpose: the
+ * 8250 DMA TX deadlock is fixed upstream (a424a34b8fad), in 6.18.44 and 7.0+.
+ */
+
+/* Display UART */
+&uart1 {
+	status = "okay";
+};
+
+&vdd_arm {
+	regulator-min-microvolt = <950000>;
+};
+
+&vdd_logic {
+	regulator-min-microvolt = <900000>;
+	regulator-max-microvolt = <1175000>;
+};
+
+&vdec {
+	status = "disabled";
+};
+
+&vdec_mmu {
+	status = "disabled";
+};

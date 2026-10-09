@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Elegoo ZNP-K1 V1.0 printer controller, Neptune 4 / 4 Pro revision.
+ *
+ * Not booted by default by any OpenNept4une image; select it with
+ * fdtfile=rockchip/rk3328-znp-k1-n4-v1.0.dtb in /boot/armbianEnv.txt.
+ */
+
+#include "rk3328-mkspi.dts"
+
+/ {
+	model = "Elegoo Neptune 4 / 4 Pro (ZNP-K1 V1.0)";
+};
+
+&rk805 {
+	interrupt-parent = <&gpio1>;
+	interrupts = <RK_PD0 IRQ_TYPE_LEVEL_LOW>;
+};
+
+&spi0 {
+	spi_for_lcd@0 {
+		status = "disabled";
+	};
+
+	spi_for_touch@1 {
+		status = "disabled";
+	};
+};
+
+/*
+ * uart0 (MCU link) keeps the DMA channels from rk3328.dtsi on purpose: the
+ * 8250 DMA TX deadlock is fixed upstream (a424a34b8fad), in 6.18.44 and 7.0+.
+ */
+
+/* Display UART */
+&uart1 {
+	status = "okay";
+};
+
+&vdd_arm {
+	regulator-min-microvolt = <950000>;
+};
+
+&vdd_logic {
+	regulator-min-microvolt = <900000>;
+	regulator-max-microvolt = <1175000>;
+};

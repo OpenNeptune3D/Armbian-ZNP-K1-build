@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Elegoo ZNP-K1 V2.0 printer controller (Neptune 4 Plus / Max).
+ *
+ * The OpenNept4une Neptune4-Plus+Max image boots this board description.
+ */
+
+#include "rk3328-znp-k1-v1x.dts"
+#include "rk3328-znp-k1-v2-io.dtsi"
+
+/ {
+	model = "Elegoo ZNP-K1 V2.0";
+
+	/* The SD card I/O rail is fixed at 3.3V on this board */
+	/delete-node/ sdmmcio-regulator;
+};
+
+&dmc_opp_table {
+	opp-798000000 {
+		status = "okay";
+	};
+};
+
+&hdmi {
+	status = "okay";
+};
+
+&hdmi_sound {
+	status = "okay";
+};
+
+&io_domains {
+	vccio3-supply = <&vcc_io>;
+};
+
+&pinctrl {
+	/delete-node/ sd;
+};
+
+&rk805 {
+	interrupt-parent = <&gpio1>;
+	interrupts = <RK_PD0 IRQ_TYPE_LEVEL_LOW>;
+};
+
+&sdmmc {
+	/delete-property/ vqmmc-supply;
+};

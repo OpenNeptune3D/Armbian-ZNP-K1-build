@@ -12,10 +12,9 @@ handle_error() {
 # Trap errors
 trap 'handle_error $LINENO' ERR
 
-# Copy DTB files to the boot partition by default this is for v.1.0 boards 
-# Although it does copy all dtb variants that can be renamed / replace the current 
-# /boot/dtb/rockchip/rk3328-roc-cc.dtb
-cp /tmp/overlay/boot/dtb/rockchip/*.dtb $SDCARD/boot/dtb/rockchip/
+# The board DTBs come from the linux-dtb package. The one that boots is set by
+# fdtfile= in /boot/armbianEnv.txt (chosen per image by ZNP_K1_VARIANT, see
+# config/boards/znp-k1.conf for the list of variants).
 
 # Copy SPI & GPIO group permission rules files to the rules.d folder
 cp /tmp/overlay/etc/udev/rules.d/*.rules $SDCARD/etc/udev/rules.d/

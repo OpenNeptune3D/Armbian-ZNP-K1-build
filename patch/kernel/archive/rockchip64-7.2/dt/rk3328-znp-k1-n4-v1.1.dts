@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Elegoo ZNP-K1 V1.1 printer controller, Neptune 4 / 4 Pro revision.
+ *
+ * Not booted by default by any OpenNept4une image; select it with
+ * fdtfile=rockchip/rk3328-znp-k1-n4-v1.1.dtb in /boot/armbianEnv.txt.
+ */
+
+#include "rk3328-znp-k1-n4-v1.0.dts"
+
+/ {
+	model = "Elegoo Neptune 4 / 4 Pro (ZNP-K1 V1.1)";
+
+	vcc_host2_5v: vcc-host2-5v-regulator {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usb30_host_drv>;
+		regulator-name = "vcc_host2_5v";
+		regulator-always-on;
+		vin-supply = <&vcc_sys>;
+	};
+};
+
+&dmc_opp_table {
+	opp-786000000 {
+		status = "disabled";
+	};
+
+	opp-798000000 {
+		status = "disabled";
+	};
+
+	opp-840000000 {
+		status = "disabled";
+	};
+};
+
+&pinctrl {
+	usb3 {
+		usb30_host_drv: usb30-host-drv {
+			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};

@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * I/O shared by the Elegoo ZNP-K1 V2.0 style boards (Neptune 4 Plus / Max):
+ * SDIO Wi-Fi (RTL8723BS), two spidev chip selects on SPI0 instead of the
+ * MKS-PI LCD/touch, and a display UART without flow control.
+ */
+
+/ {
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		reset-gpios = <&gpio1 RK_PC2 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&pinctrl {
+	pinctrl-names = "default";
+	pinctrl-0 = <&rtc_32k>;
+
+	/* gpio1 C2 is the Wi-Fi reset on these boards */
+	/delete-node/ spi0_cs2;
+
+	rtc {
+		rtc_32k: rtc-32k {
+			rockchip,pins = <1 RK_PD4 1 &pcfg_pull_none>;
+		};
+	};
+
+	sdio-pwrseq {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <1 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	spi0_cs0 {
+		pinctrl_spi0_cs0: pinctrl_spi0_cs0 {
+			rockchip,pins = <3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	spi0_cs1 {
+		pinctrl_spi0_cs1: pinctrl_spi0_cs1 {
+			rockchip,pins = <3 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};
+
+&sdio {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_cmd &sdmmc1_clk>;
+	status = "okay";
+};
+
+&spi0 {
+	cs-gpios = <&gpio3 RK_PB0 GPIO_ACTIVE_LOW>, <&gpio3 RK_PA7 GPIO_ACTIVE_LOW>;
+
+	/delete-node/ spi_for_lcd@0;
+	/delete-node/ spi_for_touch@1;
+	/delete-node/ spi_for_cs2@2;
+
+	spi_for_cs0@0 {
+		compatible = "armbian,spi-dev";
+		reg = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_spi0_cs0>;
+		spi-max-frequency = <5000000>;
+		status = "okay";
+	};
+
+	spi_for_cs1@1 {
+		compatible = "armbian,spi-dev";
+		reg = <1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_spi0_cs1>;
+		spi-max-frequency = <5000000>;
+		status = "okay";
+	};
+};
+
+&uart1 {
+	pinctrl-0 = <&uart1_xfer>;
+};
