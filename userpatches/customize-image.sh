@@ -85,7 +85,26 @@ apt-get install -y \
     v4l-utils \
     libevent-dev \
     libbsd-dev \
+    unzip \
+    dfu-util \
+    libusb-1.0-doc \
+    setserial \
+    python3-pip \
+    libopenblas-dev \
+    libatlas3-base \
+    jq \
+    zip \
+    cmake \
     || exit 1
+# Last block, by who needs it (preinstalled so first setup doesn't download them):
+#   unzip, dfu-util        KIAUH (checked before every component install)
+#   libusb-1.0-doc         Klipper: KIAUH installs "libusb-1.0", which apt treats
+#                          as a regex matching -0, -0-dev and -doc
+#   setserial              display_connector
+#   python3-pip            mobileraker_companion
+#   libopenblas-dev, libatlas3-base  OpenNept4une rpi-mcu-install.sh (ADXL)
+#   jq, zip                OpenNept4une github-issue-debug.sh
+#   cmake                  OpenNept4une webcam-setup.sh (mjpg-streamer build)
 
 # Create gpio and spi groups if they don't exist (for led control v.1.1+ & ADXL SPI)
 getent group gpio >/dev/null || groupadd gpio
